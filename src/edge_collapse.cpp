@@ -229,6 +229,32 @@ void collapse_edge(TorusMesh& mesh, int keep, int remove, QemMode mode, Collapse
     }
 }
 
+void push_local_edges(const TorusMesh& mesh, int keep, std::priority_queue<QueueItem>& heap,
+                      QemMode mode, bool lock_boundary, CollapseStats* stats = nullptr) {
+    std::vector<uint64_t> keys;
+    keys.reserve(mesh.vertices[keep].faces.size() * 2);
+    for (int fi : mesh.vertices[keep].faces) {
+        if (fi < 0 || fi >= static_cast<int>(mesh.faces.size())) continue;
+        const Face& f = mesh.faces[fi];
+        if (!f.alive) continue;
+        if (!face_has(f, keep)) continue;
+        for (int k = 0; k < 3; ++k) {
+            const int w = f.v[k];
+            if (w == keep) continue;
+            if (!mesh.vertices[w].alive) continue;
+            keys.push_back(edge_key(keep, w));
+        }
+    }
+    std::sort(keys.begin(), keys.end());
+    keys.erase(std::unique(keys.begin(), keys.end()), keys.end());
+    for (uint64_t key : keys) {
+        int a = int(key >> 32);
+        int b = int(key & 0xffffffffu);
+        QueueItem item = make_item(mesh, a, b, mode, lock_boundary, stats);
+        if (item.cost < 1e90) heap.push(item);
+    }
+}
+
 void write_progress_header(std::ofstream& csv) {
     csv << "reason,accepted,rejected,alive_vertices,alive_faces,heap_size,elapsed_seconds,"
         << "heap_pops,stale_pops,dead_pops,invalid_cost_pops,fresh_recomputes,fresh_requeues,fresh_rejects,"
@@ -250,8 +276,13 @@ void emit_progress(const char* reason, const TorusMesh& mesh, const std::priorit
                   << " rebuildSec=" << stats.rebuild_seconds
                   << " makeItemSec=" << stats.make_item_seconds
                   << " linkSec=" << stats.link_condition_seconds
+                  << " placeSec=" << stats.placement_seconds
                   << " nonFlipSec=" << stats.non_flip_seconds
+                  << " collapseSec=" << stats.collapse_update_seconds
+                  << " heapPops=" << stats.heap_pops
                   << " stale=" << stats.stale_pops
+                  << " dead=" << stats.dead_pops
+                  << " fresh=" << stats.fresh_recomputes
                   << " requeues=" << stats.fresh_requeues
                   << "\n";
     }
@@ -329,6 +360,12 @@ CollapseStats simplify_qem(TorusMesh& mesh, const CollapseOptions& opt) {
         }
 
         collapse_edge(mesh, item.u, item.v, opt.mode, &stats);
+        // Critical for QEM correctness: after a collapse, all edges incident to
+        // the surviving vertex have changed quadrics/topology and need fresh
+        // queue items.  Periodic full rebuilds should be a cleanup tool, not the
+        // only mechanism that updates edge priorities.
+        push_local_edges(mesh, item.u, heap, opt.mode, opt.lock_boundary, &stats);
+        stats.max_heap_size = std::max<std::uint64_t>(stats.max_heap_size, heap.size());
         stats.accepted++;
         since_rebuild++;
 
