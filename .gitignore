@@ -1,5 +1,6 @@
 build/
 out/
+texture/*
 *.user
 *.vcxproj*
 *.sln

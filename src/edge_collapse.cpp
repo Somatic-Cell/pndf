@@ -1,7 +1,10 @@
 #include "pndf/edge_collapse.hpp"
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
+#include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <set>
 #include <unordered_set>
@@ -9,6 +12,12 @@
 namespace pndf {
 
 namespace {
+
+using Clock = std::chrono::steady_clock;
+
+static double seconds_since(Clock::time_point t0) {
+    return std::chrono::duration<double>(Clock::now() - t0).count();
+}
 
 struct QueueItem {
     double cost = 0.0;
@@ -93,17 +102,40 @@ bool candidate_non_flipping(const TorusMesh& mesh, int keep, int remove, Vec2 ne
     return true;
 }
 
-QueueItem make_item(const TorusMesh& mesh, int u, int v, QemMode mode, bool lock_boundary) {
+QueueItem make_item(const TorusMesh& mesh, int u, int v, QemMode mode, bool lock_boundary,
+                    CollapseStats* stats = nullptr) {
+    const auto t_make = Clock::now();
+    auto finish = [&](QueueItem item) -> QueueItem {
+        if (stats) {
+            stats->make_item_calls++;
+            stats->make_item_seconds += seconds_since(t_make);
+        }
+        return item;
+    };
+
     if (u > v) std::swap(u,v);
     constexpr double kBig = 1e100;
-    if (!mesh.vertices[u].alive || !mesh.vertices[v].alive) return {kBig,u,v,0,0};
-    if (lock_boundary && (mesh.vertices[u].boundary_locked || mesh.vertices[v].boundary_locked)) return {kBig,u,v,0,0};
-    if (!shared_live_face(mesh, u, v)) return {kBig,u,v,0,0};
-    if (!link_condition_closed_manifold(mesh, u, v)) return {kBig,u,v,0,0};
+    if (!mesh.vertices[u].alive || !mesh.vertices[v].alive) return finish({kBig,u,v,0,0});
+    if (lock_boundary && (mesh.vertices[u].boundary_locked || mesh.vertices[v].boundary_locked)) return finish({kBig,u,v,0,0});
+    if (!shared_live_face(mesh, u, v)) return finish({kBig,u,v,0,0});
+
+    const auto t_link = Clock::now();
+    const bool link_ok = link_condition_closed_manifold(mesh, u, v);
+    if (stats) stats->link_condition_seconds += seconds_since(t_link);
+    if (!link_ok) return finish({kBig,u,v,0,0});
+
     const Mat5 q = mesh.vertices[u].q + mesh.vertices[v].q;
-    Placement p = best_placement(q, mesh.vertices[u].uv, mesh.vertices[u].nxy, mesh.vertices[v].uv, mesh.vertices[v].nxy, mode);
-    if (!candidate_non_flipping(mesh, u, v, p.uv)) return {kBig,u,v,0,0};
-    return {p.cost, u, v, mesh.vertices[u].version, mesh.vertices[v].version};
+    const auto t_place = Clock::now();
+    Placement p = best_placement(q, mesh.vertices[u].uv, mesh.vertices[u].nxy,
+                                 mesh.vertices[v].uv, mesh.vertices[v].nxy, mode);
+    if (stats) stats->placement_seconds += seconds_since(t_place);
+
+    const auto t_flip = Clock::now();
+    const bool no_flip = candidate_non_flipping(mesh, u, v, p.uv);
+    if (stats) stats->non_flip_seconds += seconds_since(t_flip);
+    if (!no_flip) return finish({kBig,u,v,0,0});
+
+    return finish({p.cost, u, v, mesh.vertices[u].version, mesh.vertices[v].version});
 }
 
 void initialize_quadrics(TorusMesh& mesh, QemMode mode) {
@@ -115,7 +147,9 @@ void initialize_quadrics(TorusMesh& mesh, QemMode mode) {
     }
 }
 
-void rebuild_heap(const TorusMesh& mesh, std::priority_queue<QueueItem>& heap, QemMode mode, bool lock_boundary) {
+void rebuild_heap(const TorusMesh& mesh, std::priority_queue<QueueItem>& heap, QemMode mode,
+                  bool lock_boundary, CollapseStats* stats = nullptr) {
+    const auto t_rebuild = Clock::now();
     std::vector<uint64_t> keys;
     keys.reserve(mesh.faces.size()*3/2);
     for (const Face& f : mesh.faces) {
@@ -131,8 +165,13 @@ void rebuild_heap(const TorusMesh& mesh, std::priority_queue<QueueItem>& heap, Q
     for (uint64_t key : keys) {
         int a = int(key >> 32);
         int b = int(key & 0xffffffffu);
-        QueueItem item = make_item(mesh, a, b, mode, lock_boundary);
+        QueueItem item = make_item(mesh, a, b, mode, lock_boundary, stats);
         if (item.cost < 1e90) heap.push(item);
+    }
+    if (stats) {
+        stats->rebuild_count++;
+        stats->rebuild_seconds += seconds_since(t_rebuild);
+        stats->max_heap_size = std::max<std::uint64_t>(stats->max_heap_size, heap.size());
     }
 }
 
@@ -149,9 +188,11 @@ void compact_vertex_faces(TorusMesh& mesh, int u) {
     vf.swap(out);
 }
 
-void collapse_edge(TorusMesh& mesh, int keep, int remove, QemMode mode) {
+void collapse_edge(TorusMesh& mesh, int keep, int remove, QemMode mode, CollapseStats* stats = nullptr) {
+    const auto t_collapse = Clock::now();
     Mat5 q = mesh.vertices[keep].q + mesh.vertices[remove].q;
-    Placement p = best_placement(q, mesh.vertices[keep].uv, mesh.vertices[keep].nxy, mesh.vertices[remove].uv, mesh.vertices[remove].nxy, mode);
+    Placement p = best_placement(q, mesh.vertices[keep].uv, mesh.vertices[keep].nxy,
+                                 mesh.vertices[remove].uv, mesh.vertices[remove].nxy, mode);
     mesh.vertices[keep].uv = p.uv;
     mesh.vertices[keep].nxy = p.nxy;
     mesh.vertices[keep].q = q;
@@ -181,44 +222,129 @@ void collapse_edge(TorusMesh& mesh, int keep, int remove, QemMode mode) {
     }
     mesh.vertices[remove].faces.clear();
     compact_vertex_faces(mesh, keep);
+
+    if (stats) {
+        stats->collapse_updates++;
+        stats->collapse_update_seconds += seconds_since(t_collapse);
+    }
+}
+
+void write_progress_header(std::ofstream& csv) {
+    csv << "reason,accepted,rejected,alive_vertices,alive_faces,heap_size,elapsed_seconds,"
+        << "heap_pops,stale_pops,dead_pops,invalid_cost_pops,fresh_recomputes,fresh_requeues,fresh_rejects,"
+        << "rebuild_count,max_heap_size,initialize_seconds,rebuild_seconds,make_item_seconds,"
+        << "link_condition_seconds,placement_seconds,non_flip_seconds,collapse_update_seconds\n";
+}
+
+void emit_progress(const char* reason, const TorusMesh& mesh, const std::priority_queue<QueueItem>& heap,
+                   const CollapseStats& stats, Clock::time_point t0, bool verbose, std::ofstream* csv) {
+    const double elapsed = seconds_since(t0);
+    if (verbose) {
+        std::cerr << "reason=" << reason
+                  << " accepted=" << stats.accepted
+                  << " rejected=" << stats.rejected
+                  << " aliveV=" << mesh.alive_vertex_count()
+                  << " aliveF=" << mesh.alive_face_count()
+                  << " heap=" << heap.size()
+                  << " sec=" << elapsed
+                  << " rebuildSec=" << stats.rebuild_seconds
+                  << " makeItemSec=" << stats.make_item_seconds
+                  << " linkSec=" << stats.link_condition_seconds
+                  << " nonFlipSec=" << stats.non_flip_seconds
+                  << " stale=" << stats.stale_pops
+                  << " requeues=" << stats.fresh_requeues
+                  << "\n";
+    }
+    if (csv && csv->is_open()) {
+        (*csv) << reason << ','
+               << stats.accepted << ',' << stats.rejected << ','
+               << mesh.alive_vertex_count() << ',' << mesh.alive_face_count() << ',' << heap.size() << ','
+               << elapsed << ','
+               << stats.heap_pops << ',' << stats.stale_pops << ',' << stats.dead_pops << ','
+               << stats.invalid_cost_pops << ',' << stats.fresh_recomputes << ',' << stats.fresh_requeues << ','
+               << stats.fresh_rejects << ',' << stats.rebuild_count << ',' << stats.max_heap_size << ','
+               << stats.initialize_seconds << ',' << stats.rebuild_seconds << ',' << stats.make_item_seconds << ','
+               << stats.link_condition_seconds << ',' << stats.placement_seconds << ',' << stats.non_flip_seconds << ','
+               << stats.collapse_update_seconds << '\n';
+        csv->flush();
+    }
 }
 
 } // namespace
 
 CollapseStats simplify_qem(TorusMesh& mesh, const CollapseOptions& opt) {
     CollapseStats stats;
+    const auto t0 = Clock::now();
+
+    const auto t_init = Clock::now();
     initialize_quadrics(mesh, opt.mode);
+    stats.initialize_seconds = seconds_since(t_init);
+
     std::priority_queue<QueueItem> heap;
-    rebuild_heap(mesh, heap, opt.mode, opt.lock_boundary);
-    const auto t0 = std::chrono::steady_clock::now();
+    rebuild_heap(mesh, heap, opt.mode, opt.lock_boundary, &stats);
+
+    std::ofstream csv;
+    if (!opt.progress_csv.empty()) {
+        csv.open(opt.progress_csv);
+        if (csv) write_progress_header(csv);
+        else std::cerr << "warning: could not open progress csv: " << opt.progress_csv << "\n";
+    }
+
     int since_rebuild = 0;
+    emit_progress("initial", mesh, heap, stats, t0, opt.verbose, csv.is_open() ? &csv : nullptr);
+
     while (mesh.alive_vertex_count() > opt.target_vertices && !heap.empty()) {
-        QueueItem item = heap.top(); heap.pop();
-        if (item.cost > 1e90) { stats.rejected++; continue; }
-        if (!mesh.vertices[item.u].alive || !mesh.vertices[item.v].alive) { stats.rejected++; continue; }
-        if (item.version_u != mesh.vertices[item.u].version || item.version_v != mesh.vertices[item.v].version) { stats.rejected++; continue; }
-        QueueItem fresh = make_item(mesh, item.u, item.v, opt.mode, opt.lock_boundary);
-        if (fresh.cost > 1e90) { stats.rejected++; continue; }
-        if (std::abs(fresh.cost - item.cost) > 1e-8 * (1.0 + std::abs(item.cost))) {
-            heap.push(fresh);
+        stats.max_heap_size = std::max<std::uint64_t>(stats.max_heap_size, heap.size());
+        QueueItem item = heap.top();
+        heap.pop();
+        stats.heap_pops++;
+
+        if (item.cost > 1e90) {
+            stats.rejected++;
+            stats.invalid_cost_pops++;
             continue;
         }
-        collapse_edge(mesh, item.u, item.v, opt.mode);
+        if (!mesh.vertices[item.u].alive || !mesh.vertices[item.v].alive) {
+            stats.rejected++;
+            stats.dead_pops++;
+            continue;
+        }
+        if (item.version_u != mesh.vertices[item.u].version || item.version_v != mesh.vertices[item.v].version) {
+            stats.rejected++;
+            stats.stale_pops++;
+            continue;
+        }
+
+        stats.fresh_recomputes++;
+        QueueItem fresh = make_item(mesh, item.u, item.v, opt.mode, opt.lock_boundary, &stats);
+        if (fresh.cost > 1e90) {
+            stats.rejected++;
+            stats.fresh_rejects++;
+            continue;
+        }
+        if (std::abs(fresh.cost - item.cost) > 1e-8 * (1.0 + std::abs(item.cost))) {
+            heap.push(fresh);
+            stats.fresh_requeues++;
+            continue;
+        }
+
+        collapse_edge(mesh, item.u, item.v, opt.mode, &stats);
         stats.accepted++;
         since_rebuild++;
-        if (since_rebuild >= opt.rebuild_interval) {
+
+        if (opt.rebuild_interval > 0 && since_rebuild >= opt.rebuild_interval) {
             since_rebuild = 0;
-            rebuild_heap(mesh, heap, opt.mode, opt.lock_boundary);
-            if (opt.verbose) {
-                auto t1 = std::chrono::steady_clock::now();
-                double sec = std::chrono::duration<double>(t1-t0).count();
-                std::cerr << "accepted=" << stats.accepted << " aliveV=" << mesh.alive_vertex_count()
-                          << " aliveF=" << mesh.alive_face_count() << " sec=" << sec << "\n";
-            }
+            rebuild_heap(mesh, heap, opt.mode, opt.lock_boundary, &stats);
+            emit_progress("rebuild", mesh, heap, stats, t0, opt.verbose, csv.is_open() ? &csv : nullptr);
+        } else if (opt.progress_interval > 0 && stats.accepted % opt.progress_interval == 0) {
+            emit_progress("progress", mesh, heap, stats, t0, opt.verbose, csv.is_open() ? &csv : nullptr);
         }
     }
+
     stats.final_vertices = mesh.alive_vertex_count();
     stats.final_faces = mesh.alive_face_count();
+    stats.total_seconds = seconds_since(t0);
+    emit_progress(heap.empty() ? "final_heap_empty" : "final", mesh, heap, stats, t0, opt.verbose, csv.is_open() ? &csv : nullptr);
     return stats;
 }
 
