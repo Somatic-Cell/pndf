@@ -1,0 +1,11 @@
+build/
+out/
+*.user
+*.vcxproj*
+*.sln
+*.bin
+*.csv
+*.npz
+__pycache__/
+.venv/
+.DS_Store
