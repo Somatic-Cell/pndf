@@ -1,0 +1,14 @@
+nxy_bin: C:\Users\sy415\workspace\pndf_qem_phase1\out256_normal\brush_ds4_nxy.bin
+meshbin: C:\Users\sy415\workspace\pndf_qem_phase1\out256_normal\brush_normal_ds4_v8192.meshbin
+mesh_format: width,height,V,F
+nxy_resolution: 256 x 256
+mesh_declared_resolution: 256 x 256
+vertices: 8192
+faces: 16384
+crop: u0=0.75117188, v0=0.76289063, size=0.15000000, pixels=2048
+full_overlay_max_edges: 120000
+crop_overlay_edges_drawn: 619
+mean_deg: 0.26609301567077637
+p95_deg: 0.7330201268196106
+p99_deg: 1.0264674425125122
+max_deg: 2.522742986679077

@@ -1,11 +1,15 @@
 #pragma once
 #include <cstdint>
+#include <functional>
 #include <queue>
 #include <string>
+#include <vector>
 #include "pndf/torus_mesh.hpp"
 #include "pndf/qem.hpp"
 
 namespace pndf {
+
+struct CollapseStats;
 
 struct CollapseOptions {
     int target_vertices = 0;
@@ -22,6 +26,12 @@ struct CollapseOptions {
 
     // Optional CSV file for per-progress profiling samples.  Empty means disabled.
     std::string progress_csv;
+
+    // Optional checkpoint vertices for multi-target sweeps.  The simplifier emits a
+    // checkpoint once alive vertices become <= each target.  The callback must not
+    // mutate the mesh; it is intended for read-only mesh serialization.
+    std::vector<int> checkpoint_vertices;
+    std::function<void(int checkpoint_target, const TorusMesh& mesh, const CollapseStats& stats)> checkpoint_callback;
 
     bool verbose = true;
 };

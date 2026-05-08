@@ -1,0 +1,252 @@
+diff --git a/include/pndf/math.hpp b/include/pndf/math.hpp
+index 36eeca9..eed7ac5 100644
+--- a/include/pndf/math.hpp
++++ b/include/pndf/math.hpp
+@@ -50,11 +50,25 @@ inline double wrap_delta(double d) {
+ 
+ inline Vec2 wrap_delta(Vec2 d) { return {wrap_delta(d.x), wrap_delta(d.y)}; }
+ inline Vec2 fract(Vec2 v) { return {wrap01(v.x), wrap01(v.y)}; }
++
++inline Vec2 unwrap_near(Vec2 p, Vec2 reference) {
++    return reference + wrap_delta(p - reference);
++}
++
++inline Vec2 integer_chart_shift(Vec2 source_origin, Vec2 target_origin) {
++    return {std::round(source_origin.x - target_origin.x),
++            std::round(source_origin.y - target_origin.y)};
++}
++
+ inline Vec2 periodic_midpoint(Vec2 a, Vec2 b) {
+     Vec2 d = wrap_delta(b - a);
+     return fract(a + d * 0.5);
+ }
+ 
++inline Vec2 periodic_midpoint_unwrapped(Vec2 a, Vec2 b) {
++    return (a + unwrap_near(b, a)) * 0.5;
++}
++
+ inline Vec2 clamp_projected_normal(Vec2 n) {
+     const double r2 = n.x*n.x + n.y*n.y;
+     if (r2 > 0.998001) {
+@@ -99,6 +113,35 @@ inline double eval_quadric(const Mat5& q, const std::array<double,5>& z) {
+     return v;
+ }
+ 
++inline Mat5 translate_uv_quadric(const Mat5& q, Vec2 t) {
++    // Re-express a homogeneous quadric under x_old = x_new + t,
++    // where x = (u,v,nx,ny).  If z_old = M z_new, the transformed
++    // quadric is M^T Q M.  Only the u/v coordinates are translated.
++    double M[5][5]{};
++    for (int i = 0; i < 5; ++i) M[i][i] = 1.0;
++    M[0][4] = t.x;
++    M[1][4] = t.y;
++
++    double tmp[5][5]{};
++    for (int i = 0; i < 5; ++i) {
++        for (int j = 0; j < 5; ++j) {
++            for (int k = 0; k < 5; ++k) tmp[i][j] += q(i,k) * M[k][j];
++        }
++    }
++
++    Mat5 out;
++    for (int i = 0; i < 5; ++i) {
++        for (int j = 0; j < 5; ++j) {
++            for (int k = 0; k < 5; ++k) out(i,j) += M[k][i] * tmp[k][j];
++        }
++    }
++    return out;
++}
++
++inline Mat5 rebase_uv_quadric(const Mat5& q, Vec2 source_origin, Vec2 target_origin) {
++    return translate_uv_quadric(q, integer_chart_shift(source_origin, target_origin));
++}
++
+ inline bool solve2x2(double a00, double a01, double a11, double b0, double b1, double& x0, double& x1) {
+     const double det = a00*a11 - a01*a01;
+     if (std::abs(det) < 1e-18) return false;
+diff --git a/include/pndf/qem.hpp b/include/pndf/qem.hpp
+index baccca9..436ca1b 100644
+--- a/include/pndf/qem.hpp
++++ b/include/pndf/qem.hpp
+@@ -20,5 +20,6 @@ Mat5 triangle_quadric_normal_only(const TorusMesh& mesh, const Face& face);
+ Mat5 triangle_quadric_4d(const TorusMesh& mesh, const Face& face);
+ Mat5 point_normal_stabilizer(Vec2 nxy, double weight = 1.0);
+ Placement best_placement(const Mat5& q, Vec2 u0, Vec2 n0, Vec2 u1, Vec2 n1, QemMode mode);
++Placement best_placement_unwrapped(const Mat5& q, Vec2 u0, Vec2 n0, Vec2 u1_unwrapped, Vec2 n1, QemMode mode);
+ 
+ } // namespace pndf
+diff --git a/include/pndf/torus_mesh.hpp b/include/pndf/torus_mesh.hpp
+index 4082bad..ec68f73 100644
+--- a/include/pndf/torus_mesh.hpp
++++ b/include/pndf/torus_mesh.hpp
+@@ -8,6 +8,7 @@ namespace pndf {
+ 
+ struct Vertex {
+     Vec2 uv;     // torus coordinate in [0,1)
++    Vec2 q_origin; // unwrapped chart anchor in which q is expressed
+     Vec2 nxy;    // projected normal
+     bool alive = true;
+     bool boundary_locked = false; // debug mode only; true torus does not need this
+diff --git a/src/edge_collapse.cpp b/src/edge_collapse.cpp
+index 00e1e12..cfe4d62 100644
+--- a/src/edge_collapse.cpp
++++ b/src/edge_collapse.cpp
+@@ -72,6 +72,21 @@ bool link_condition_closed_manifold(const TorusMesh& mesh, int u, int v) {
+     return inter.size() == 2;
+ }
+ 
++Mat5 vertex_quadric_in_chart(const Vertex& v, Vec2 chart_origin) {
++    return rebase_uv_quadric(v.q, v.q_origin, chart_origin);
++}
++
++Mat5 edge_quadric_in_chart(const TorusMesh& mesh, int u, int v, Vec2 chart_origin) {
++    return vertex_quadric_in_chart(mesh.vertices[u], chart_origin) +
++           vertex_quadric_in_chart(mesh.vertices[v], chart_origin);
++}
++
++Placement edge_best_placement_in_chart(const TorusMesh& mesh, int u, int v, const Mat5& q, QemMode mode, Vec2 chart_origin) {
++    const Vec2 u0 = mesh.vertices[u].uv;
++    const Vec2 u1 = unwrap_near(mesh.vertices[v].uv, chart_origin);
++    return best_placement_unwrapped(q, u0, mesh.vertices[u].nxy, u1, mesh.vertices[v].nxy, mode);
++}
++
+ bool candidate_non_flipping(const TorusMesh& mesh, int keep, int remove, Vec2 new_uv) {
+     std::vector<int> affected = mesh.vertices[keep].faces;
+     affected.insert(affected.end(), mesh.vertices[remove].faces.begin(), mesh.vertices[remove].faces.end());
+@@ -125,10 +140,10 @@ QueueItem make_item(const TorusMesh& mesh, int u, int v, QemMode mode, bool lock
+     if (stats) stats->link_condition_seconds += seconds_since(t_link);
+     if (!link_ok) return finish({kBig,u,v,0,0});
+ 
+-    const Mat5 q = mesh.vertices[u].q + mesh.vertices[v].q;
++    const Vec2 chart_origin = mesh.vertices[u].uv;
++    const Mat5 q = edge_quadric_in_chart(mesh, u, v, chart_origin);
+     const auto t_place = Clock::now();
+-    Placement p = best_placement(q, mesh.vertices[u].uv, mesh.vertices[u].nxy,
+-                                 mesh.vertices[v].uv, mesh.vertices[v].nxy, mode);
++    Placement p = edge_best_placement_in_chart(mesh, u, v, q, mode, chart_origin);
+     if (stats) stats->placement_seconds += seconds_since(t_place);
+ 
+     const auto t_flip = Clock::now();
+@@ -140,11 +155,19 @@ QueueItem make_item(const TorusMesh& mesh, int u, int v, QemMode mode, bool lock
+ }
+ 
+ void initialize_quadrics(TorusMesh& mesh, QemMode mode) {
+-    for (auto& v : mesh.vertices) v.q = point_normal_stabilizer(v.nxy, 1.0);
++    for (auto& v : mesh.vertices) {
++        v.q_origin = v.uv;
++        v.q = point_normal_stabilizer(v.nxy, 1.0);
++    }
+     for (const Face& f : mesh.faces) {
+         if (!f.alive) continue;
++        const auto uv = unwrapped_face_uvs(mesh, f);
++        const Vec2 face_origin = uv[0];
+         Mat5 q = (mode == QemMode::NormalOnly) ? triangle_quadric_normal_only(mesh, f) : triangle_quadric_4d(mesh, f);
+-        for (int k=0;k<3;++k) mesh.vertices[f.v[k]].q += q;
++        for (int k=0;k<3;++k) {
++            Vertex& v = mesh.vertices[f.v[k]];
++            v.q += rebase_uv_quadric(q, face_origin, v.q_origin);
++        }
+     }
+ }
+ 
+@@ -191,10 +214,11 @@ void compact_vertex_faces(TorusMesh& mesh, int u) {
+ 
+ void collapse_edge(TorusMesh& mesh, int keep, int remove, QemMode mode, CollapseStats* stats = nullptr) {
+     const auto t_collapse = Clock::now();
+-    Mat5 q = mesh.vertices[keep].q + mesh.vertices[remove].q;
+-    Placement p = best_placement(q, mesh.vertices[keep].uv, mesh.vertices[keep].nxy,
+-                                 mesh.vertices[remove].uv, mesh.vertices[remove].nxy, mode);
+-    mesh.vertices[keep].uv = p.uv;
++    const Vec2 chart_origin = mesh.vertices[keep].uv;
++    Mat5 q = edge_quadric_in_chart(mesh, keep, remove, chart_origin);
++    Placement p = edge_best_placement_in_chart(mesh, keep, remove, q, mode, chart_origin);
++    mesh.vertices[keep].uv = fract(p.uv);
++    mesh.vertices[keep].q_origin = p.uv;
+     mesh.vertices[keep].nxy = p.nxy;
+     mesh.vertices[keep].q = q;
+     mesh.vertices[keep].version++;
+diff --git a/src/mesh_io.cpp b/src/mesh_io.cpp
+index 44e0824..38f9068 100644
+--- a/src/mesh_io.cpp
++++ b/src/mesh_io.cpp
+@@ -44,6 +44,7 @@ TorusMesh read_mesh_binary(const std::string& path) {
+     for (int32_t i=0;i<vcount;++i) {
+         float rec[4]; f.read(reinterpret_cast<char*>(rec), sizeof(rec));
+         mesh.vertices[i].uv = {rec[0], rec[1]};
++        mesh.vertices[i].q_origin = mesh.vertices[i].uv;
+         mesh.vertices[i].nxy = clamp_projected_normal({rec[2], rec[3]});
+         mesh.vertices[i].alive = true;
+     }
+diff --git a/src/qem.cpp b/src/qem.cpp
+index 7100a0d..c85e6ce 100644
+--- a/src/qem.cpp
++++ b/src/qem.cpp
+@@ -88,10 +88,13 @@ static Vec2 solve_normal_for_fixed_uv(const Mat5& q, Vec2 uv, Vec2 fallback) {
+     return clamp_projected_normal({nx, ny});
+ }
+ 
+-Placement best_placement(const Mat5& q, Vec2 u0, Vec2 n0, Vec2 u1, Vec2 n1, QemMode mode) {
+-    const Vec2 umid = periodic_midpoint(u0, u1);
++Placement best_placement_unwrapped(const Mat5& q, Vec2 u0, Vec2 n0, Vec2 u1_unwrapped, Vec2 n1, QemMode mode) {
++    // u0 and u1_unwrapped must be in the same local torus chart.  The
++    // returned uv is deliberately not wrapped back to [0,1): doing so would
++    // make seam-crossing collapses attract to the arbitrary cut line.
++    const Vec2 umid = (u0 + u1_unwrapped) * 0.5;
+     const Vec2 nmid = clamp_projected_normal((n0+n1)*0.5);
+-    std::array<Vec2,3> uv_candidates{umid, u0, u1};
++    std::array<Vec2,3> uv_candidates{umid, u0, u1_unwrapped};
+     std::array<Vec2,3> n_candidates{nmid, n0, n1};
+     Placement best;
+     best.cost = std::numeric_limits<double>::infinity();
+@@ -104,4 +107,8 @@ Placement best_placement(const Mat5& q, Vec2 u0, Vec2 n0, Vec2 u1, Vec2 n1, QemM
+     return best;
+ }
+ 
++Placement best_placement(const Mat5& q, Vec2 u0, Vec2 n0, Vec2 u1, Vec2 n1, QemMode mode) {
++    return best_placement_unwrapped(q, u0, n0, unwrap_near(u1, u0), n1, mode);
++}
++
+ } // namespace pndf
+diff --git a/src/torus_mesh.cpp b/src/torus_mesh.cpp
+index 702353a..b133467 100644
+--- a/src/torus_mesh.cpp
++++ b/src/torus_mesh.cpp
+@@ -19,6 +19,7 @@ void TorusMesh::build_full_torus(const NormalMap& normal_map) {
+         for (int x=0;x<width;++x) {
+             const int id = vertex_id(x,y);
+             vertices[id].uv = { (x + 0.5) / double(width), (y + 0.5) / double(height) };
++            vertices[id].q_origin = vertices[id].uv;
+             vertices[id].nxy = normal_map.nxy[static_cast<size_t>(y)*width + x];
+             vertices[id].alive = true;
+             vertices[id].version = 0;
+diff --git a/tests/test_qem.cpp b/tests/test_qem.cpp
+index 0a838d0..95529b5 100644
+--- a/tests/test_qem.cpp
++++ b/tests/test_qem.cpp
+@@ -21,4 +21,24 @@ TEST_CASE(test_normal_qem_affine_field_low_cost) {
+     const Vertex& a = mesh.vertices[f.v[0]];
+     double c = eval_quadric(q, {a.uv.x, a.uv.y, a.nxy.x, a.nxy.y, 1.0});
+     REQUIRE(c < 1e-8);
+-}
+\ No newline at end of file
++}
++
++TEST_CASE(test_uv_quadric_rebase_translation) {
++    Mat5 q;
++    // Plane: u_old - nx = 0.
++    q.add_outer({1.0, 0.0, -1.0, 0.0, 0.0});
++    Mat5 qr = translate_uv_quadric(q, {1.0, 0.0});
++    // In the new chart, u_old = u_new + 1, so nx must equal u_new + 1.
++    double c = eval_quadric(qr, {0.25, 0.0, 1.25, 0.0, 1.0});
++    REQUIRE(c < 1e-10);
++}
++
++TEST_CASE(test_best_placement_does_not_wrap_seam_midpoint) {
++    Mat5 q;
++    // A zero quadric makes all candidates equal; this tests the candidate
++    // construction itself.  For a seam-crossing edge 0.99 -> 0.01, the
++    // unwrapped midpoint should be 1.0, not 0.0.
++    Placement p = best_placement(q, {0.99, 0.5}, {0.0, 0.0}, {0.01, 0.5}, {0.0, 0.0}, QemMode::Qem4D);
++    REQUIRE_NEAR(p.uv.x, 1.0, 1e-12);
++    REQUIRE_NEAR(p.uv.y, 0.5, 1e-12);
++}

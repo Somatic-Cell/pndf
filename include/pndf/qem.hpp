@@ -20,5 +20,6 @@ Mat5 triangle_quadric_normal_only(const TorusMesh& mesh, const Face& face);
 Mat5 triangle_quadric_4d(const TorusMesh& mesh, const Face& face);
 Mat5 point_normal_stabilizer(Vec2 nxy, double weight = 1.0);
 Placement best_placement(const Mat5& q, Vec2 u0, Vec2 n0, Vec2 u1, Vec2 n1, QemMode mode);
+Placement best_placement_unwrapped(const Mat5& q, Vec2 u0, Vec2 n0, Vec2 u1_unwrapped, Vec2 n1, QemMode mode);
 
 } // namespace pndf

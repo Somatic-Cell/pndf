@@ -1,0 +1,14 @@
+nxy_bin: C:\Users\sy415\workspace\pndf_qem_phase1\out256_4d\isotropic_ds4_nxy.bin
+meshbin: C:\Users\sy415\workspace\pndf_qem_phase1\out256_4d\isotropic_4d_ds4_v16384.meshbin
+mesh_format: width,height,V,F
+nxy_resolution: 256 x 256
+mesh_declared_resolution: 256 x 256
+vertices: 16384
+faces: 32768
+crop: u0=0.48164062, v0=0.68476563, size=0.15000000, pixels=2048
+full_overlay_max_edges: 120000
+crop_overlay_edges_drawn: 1185
+mean_deg: 2.754356622695923
+p95_deg: 5.506392478942871
+p99_deg: 7.055063724517822
+max_deg: 12.990113258361816

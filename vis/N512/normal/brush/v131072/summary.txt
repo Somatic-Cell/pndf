@@ -1,0 +1,14 @@
+nxy_bin: C:\Users\sy415\workspace\pndf_qem_phase1\out512_normal\brush_ds2_nxy.bin
+meshbin: C:\Users\sy415\workspace\pndf_qem_phase1\out512_normal\brush_normal_ds2_v131072.meshbin
+mesh_format: width,height,V,F
+nxy_resolution: 512 x 512
+mesh_declared_resolution: 512 x 512
+vertices: 131072
+faces: 262144
+crop: u0=0.23066406, v0=0.78144531, size=0.15000000, pixels=2048
+full_overlay_max_edges: 120000
+crop_overlay_edges_drawn: 9370
+mean_deg: 0.005689737852662802
+p95_deg: 0.03426402062177658
+p99_deg: 0.0656106024980545
+max_deg: 0.14935342967510223

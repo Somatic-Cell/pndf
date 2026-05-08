@@ -1,0 +1,14 @@
+nxy_bin: C:\Users\sy415\workspace\pndf_qem_phase1\out512_normal\scratched_ds2_nxy.bin
+meshbin: C:\Users\sy415\workspace\pndf_qem_phase1\out512_normal\scratched_normal_ds2_v65536.meshbin
+mesh_format: width,height,V,F
+nxy_resolution: 512 x 512
+mesh_declared_resolution: 512 x 512
+vertices: 65536
+faces: 131072
+crop: u0=0.43964844, v0=0.10566406, size=0.15000000, pixels=2048
+full_overlay_max_edges: 120000
+crop_overlay_edges_drawn: 5059
+mean_deg: 0.6041314601898193
+p95_deg: 1.5845961570739746
+p99_deg: 2.5619852542877197
+max_deg: 5.633325099945068

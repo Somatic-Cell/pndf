@@ -1,0 +1,14 @@
+nxy_bin: C:\Users\sy415\workspace\pndf_qem_phase1\out512_normal\isotropic_ds2_nxy.bin
+meshbin: C:\Users\sy415\workspace\pndf_qem_phase1\out512_normal\isotropic_normal_ds2_v65536.meshbin
+mesh_format: width,height,V,F
+nxy_resolution: 512 x 512
+mesh_declared_resolution: 512 x 512
+vertices: 65536
+faces: 131072
+crop: u0=0.48066406, v0=0.67988281, size=0.15000000, pixels=2048
+full_overlay_max_edges: 120000
+crop_overlay_edges_drawn: 4648
+mean_deg: 1.0974373817443848
+p95_deg: 2.2329182624816895
+p99_deg: 2.878246784210205
+max_deg: 6.119555473327637

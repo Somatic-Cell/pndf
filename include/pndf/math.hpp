@@ -50,9 +50,23 @@ inline double wrap_delta(double d) {
 
 inline Vec2 wrap_delta(Vec2 d) { return {wrap_delta(d.x), wrap_delta(d.y)}; }
 inline Vec2 fract(Vec2 v) { return {wrap01(v.x), wrap01(v.y)}; }
+
+inline Vec2 unwrap_near(Vec2 p, Vec2 reference) {
+    return reference + wrap_delta(p - reference);
+}
+
+inline Vec2 integer_chart_shift(Vec2 source_origin, Vec2 target_origin) {
+    return {std::round(source_origin.x - target_origin.x),
+            std::round(source_origin.y - target_origin.y)};
+}
+
 inline Vec2 periodic_midpoint(Vec2 a, Vec2 b) {
     Vec2 d = wrap_delta(b - a);
     return fract(a + d * 0.5);
+}
+
+inline Vec2 periodic_midpoint_unwrapped(Vec2 a, Vec2 b) {
+    return (a + unwrap_near(b, a)) * 0.5;
 }
 
 inline Vec2 clamp_projected_normal(Vec2 n) {
@@ -97,6 +111,35 @@ inline double eval_quadric(const Mat5& q, const std::array<double,5>& z) {
     double v = 0.0;
     for (int i=0;i<5;++i) for (int j=0;j<5;++j) v += z[i] * q(i,j) * z[j];
     return v;
+}
+
+inline Mat5 translate_uv_quadric(const Mat5& q, Vec2 t) {
+    // Re-express a homogeneous quadric under x_old = x_new + t,
+    // where x = (u,v,nx,ny).  If z_old = M z_new, the transformed
+    // quadric is M^T Q M.  Only the u/v coordinates are translated.
+    double M[5][5]{};
+    for (int i = 0; i < 5; ++i) M[i][i] = 1.0;
+    M[0][4] = t.x;
+    M[1][4] = t.y;
+
+    double tmp[5][5]{};
+    for (int i = 0; i < 5; ++i) {
+        for (int j = 0; j < 5; ++j) {
+            for (int k = 0; k < 5; ++k) tmp[i][j] += q(i,k) * M[k][j];
+        }
+    }
+
+    Mat5 out;
+    for (int i = 0; i < 5; ++i) {
+        for (int j = 0; j < 5; ++j) {
+            for (int k = 0; k < 5; ++k) out(i,j) += M[k][i] * tmp[k][j];
+        }
+    }
+    return out;
+}
+
+inline Mat5 rebase_uv_quadric(const Mat5& q, Vec2 source_origin, Vec2 target_origin) {
+    return translate_uv_quadric(q, integer_chart_shift(source_origin, target_origin));
 }
 
 inline bool solve2x2(double a00, double a01, double a11, double b0, double b1, double& x0, double& x1) {

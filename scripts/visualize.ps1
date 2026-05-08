@@ -1,0 +1,12 @@
+python python\visualize_pndf_mesh.py `
+  --nxy-bin out256_normal_rebased\isotropic_ds4_nxy.bin `
+  --meshbin out256_normal_rebased\isotropic_normal_ds4_v4096.meshbin `
+  --out-dir vis_diag\isotropic_normal_v4096 `
+  --crop auto `
+  --crop-size 0.15 `
+  --crop-pixels 2048 `
+  --full-max-edges 0 `
+  --diagnose-seam `
+  --uv-shift 0.5,0.5 `
+  --render-reconstruction `
+  --error-heatmap

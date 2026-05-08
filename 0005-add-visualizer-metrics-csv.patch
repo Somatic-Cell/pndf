@@ -1,0 +1,201 @@
+diff -uNr a/python/visualize_pndf_mesh.py b/python/visualize_pndf_mesh.py
+--- a/python/visualize_pndf_mesh.py	2026-05-07 11:23:55.535412697 +0000
++++ b/python/visualize_pndf_mesh.py	2026-05-07 11:23:55.546926318 +0000
+@@ -48,6 +48,7 @@
+ from __future__ import annotations
+ 
+ import argparse
++import csv
+ import math
+ import os
+ from pathlib import Path
+@@ -334,7 +335,40 @@
+     plt.close(fig)
+ 
+ 
+-def rasterize_mesh_to_grid(vertices: np.ndarray, faces: np.ndarray, H: int, W: int) -> np.ndarray:
++def normal_error_metrics(gt: np.ndarray, rec: np.ndarray, coverage: Optional[np.ndarray] = None) -> dict[str, float | int]:
++    """Dense texel-level normal error statistics for a reconstructed PL normal map."""
++    err = angular_error_deg(gt, rec)
++    unit_gt = nxy_to_unit(gt)
++    unit_rec = nxy_to_unit(rec)
++    mse = float(np.mean(np.sum((unit_gt - unit_rec) ** 2, axis=-1)))
++    out: dict[str, float | int] = {
++        "mean_ang_deg": float(np.mean(err)),
++        "p50_ang_deg": float(np.percentile(err, 50)),
++        "p95_ang_deg": float(np.percentile(err, 95)),
++        "p99_ang_deg": float(np.percentile(err, 99)),
++        "max_ang_deg": float(np.max(err)),
++        "normal_mse": mse,
++        "normal_psnr_db": float(10.0 * np.log10(4.0 / (mse + EPS))),
++    }
++    if coverage is not None:
++        covered = int(np.count_nonzero(coverage))
++        total = int(coverage.size)
++        out["covered_pixels"] = covered
++        out["total_pixels"] = total
++        out["uncovered_pixels"] = total - covered
++        out["coverage_ratio"] = float(covered / max(total, 1))
++    return out
++
++
++def write_metrics_csv(path: Path, row: dict[str, object]) -> None:
++    path.parent.mkdir(parents=True, exist_ok=True)
++    with path.open("w", newline="", encoding="utf-8") as f:
++        writer = csv.DictWriter(f, fieldnames=list(row.keys()))
++        writer.writeheader()
++        writer.writerow(row)
++
++
++def rasterize_mesh_to_grid(vertices: np.ndarray, faces: np.ndarray, H: int, W: int, return_coverage: bool = False) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
+     """Slow but robust CPU rasterization of periodic PL mesh to texel centers.
+ 
+     Intended for visualization/evaluation at N=128/256/512.  For large 1024 meshes with
+@@ -387,7 +421,8 @@
+                 py = np.clip(np.floor(coords[:, 1] * H).astype(np.int64), 0, H - 1)
+                 out[py, px] = interp[inside].astype(np.float32)
+ 
+-    missing = ~np.isfinite(out).all(axis=-1)
++    coverage = np.isfinite(out).all(axis=-1)
++    missing = ~coverage
+     if np.any(missing):
+         # Fallback nearest vertex for any tiny holes.
+         from scipy.spatial import cKDTree  # optional; only needed for fallback
+@@ -401,7 +436,10 @@
+         q = np.stack([(xx + 0.5) / W, (yy + 0.5) / H], axis=-1)
+         _, nn = tree.query(q)
+         out[yy, xx] = vals_aug[nn]
+-    return clamp_nxy(out)
++    out = clamp_nxy(out)
++    if return_coverage:
++        return out, coverage
++    return out
+ 
+ 
+ def main():
+@@ -420,6 +458,12 @@
+     ap.add_argument("--seed", type=int, default=1)
+     ap.add_argument("--render-reconstruction", action="store_true")
+     ap.add_argument("--error-heatmap", action="store_true")
++    ap.add_argument(
++        "--metrics-csv",
++        type=Path,
++        default=None,
++        help="write dense texel-level reconstruction metrics to CSV. This reuses the rasterized reconstruction; it does not run QEM.",
++    )
+     ap.add_argument("--skip-full-overlay", action="store_true", help="skip full mesh overlay if mesh is huge")
+     args = ap.parse_args()
+ 
+@@ -463,49 +507,68 @@
+     )
+ 
+     rec = None
+-    if args.render_reconstruction or args.error_heatmap:
+-        rec = rasterize_mesh_to_grid(vertices, faces, H, W)
+-        rec_full = normal_rgb(rec)
+-        rec_crop_nxy = crop_normal_image(rec, u0, v0, crop_size, args.crop_pixels)
+-        rec_crop = normal_rgb(rec_crop_nxy)
+-        save_image(args.out_dir / "05_reconstructed_normal_full.png", rec_full, title="Reconstructed normal map")
+-        if not args.skip_full_overlay:
+-            segs_full = edge_segments_full(uv, faces, max_edges=args.full_max_edges, seed=args.seed)
++    coverage = None
++    needs_reconstruction = args.render_reconstruction or args.error_heatmap or args.metrics_csv is not None
++    if needs_reconstruction:
++        rec, coverage = rasterize_mesh_to_grid(vertices, faces, H, W, return_coverage=True)
++        write_reconstruction_images = args.render_reconstruction or args.error_heatmap
++        if write_reconstruction_images:
++            rec_full = normal_rgb(rec)
++            rec_crop_nxy = crop_normal_image(rec, u0, v0, crop_size, args.crop_pixels)
++            rec_crop = normal_rgb(rec_crop_nxy)
++            save_image(args.out_dir / "05_reconstructed_normal_full.png", rec_full, title="Reconstructed normal map")
++            if not args.skip_full_overlay:
++                segs_full = edge_segments_full(uv, faces, max_edges=args.full_max_edges, seed=args.seed)
++                save_overlay(
++                    args.out_dir / "06_reconstructed_with_mesh_overlay_full.png",
++                    rec_full,
++                    segs_full,
++                    title="Reconstructed + mesh overlay",
++                    linewidth=args.line_width,
++                    alpha=args.line_alpha,
++                    dpi=220,
++                )
++            save_image(args.out_dir / "07_reconstructed_normal_crop.png", rec_crop, title="Reconstructed crop", dpi=220)
+             save_overlay(
+-                args.out_dir / "06_reconstructed_with_mesh_overlay_full.png",
+-                rec_full,
+-                segs_full,
+-                title="Reconstructed + mesh overlay",
+-                linewidth=args.line_width,
++                args.out_dir / "08_reconstructed_with_mesh_overlay_crop.png",
++                rec_crop,
++                segs_crop,
++                title="Reconstructed crop + mesh overlay",
++                linewidth=args.crop_line_width,
+                 alpha=args.line_alpha,
+-                dpi=220,
++                dpi=260,
+             )
+-        save_image(args.out_dir / "07_reconstructed_normal_crop.png", rec_crop, title="Reconstructed crop", dpi=220)
+-        save_overlay(
+-            args.out_dir / "08_reconstructed_with_mesh_overlay_crop.png",
+-            rec_crop,
+-            segs_crop,
+-            title="Reconstructed crop + mesh overlay",
+-            linewidth=args.crop_line_width,
+-            alpha=args.line_alpha,
+-            dpi=260,
+-        )
++
++    dense_metrics = {}
++    if rec is not None:
++        dense_metrics = normal_error_metrics(nxy, rec, coverage)
+ 
+     if args.error_heatmap:
+         if rec is None:
+-            rec = rasterize_mesh_to_grid(vertices, faces, H, W)
++            rec, coverage = rasterize_mesh_to_grid(vertices, faces, H, W, return_coverage=True)
++            dense_metrics = normal_error_metrics(nxy, rec, coverage)
+         err = angular_error_deg(nxy, rec)
+         save_error_heatmap(args.out_dir / "09_angular_error_heatmap_full.png", err, title="Angular error full")
+         err_crop = angular_error_deg(gt_crop_nxy, crop_normal_image(rec, u0, v0, crop_size, args.crop_pixels))
+         save_error_heatmap(args.out_dir / "10_angular_error_heatmap_crop.png", err_crop, title="Angular error crop")
+-        err_stats = {
+-            "mean_deg": float(err.mean()),
+-            "p95_deg": float(np.percentile(err, 95)),
+-            "p99_deg": float(np.percentile(err, 99)),
+-            "max_deg": float(err.max()),
++
++    if args.metrics_csv is not None:
++        metrics_row = {
++            "nxy_bin": str(args.nxy_bin),
++            "meshbin": str(args.meshbin),
++            "mesh_format": mesh_format,
++            "nxy_width": W,
++            "nxy_height": H,
++            "mesh_declared_width": width,
++            "mesh_declared_height": height,
++            "vertices": int(len(vertices)),
++            "faces": int(len(faces)),
++            "crop_u0": float(u0),
++            "crop_v0": float(v0),
++            "crop_size": float(crop_size),
++            **dense_metrics,
+         }
+-    else:
+-        err_stats = {}
++        write_metrics_csv(args.metrics_csv, metrics_row)
+ 
+     summary = []
+     summary.append(f"nxy_bin: {args.nxy_bin}")
+@@ -518,8 +581,10 @@
+     summary.append(f"crop: u0={u0:.8f}, v0={v0:.8f}, size={crop_size:.8f}, pixels={args.crop_pixels}")
+     summary.append(f"full_overlay_max_edges: {args.full_max_edges}")
+     summary.append(f"crop_overlay_edges_drawn: {len(segs_crop)}")
+-    for k, v in err_stats.items():
++    for k, v in dense_metrics.items():
+         summary.append(f"{k}: {v}")
++    if args.metrics_csv is not None:
++        summary.append(f"metrics_csv: {args.metrics_csv}")
+     (args.out_dir / "summary.txt").write_text("\n".join(summary) + "\n", encoding="utf-8")
+     print("\n".join(summary))
+     print(f"wrote outputs to {args.out_dir}")

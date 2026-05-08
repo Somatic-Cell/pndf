@@ -8,6 +8,7 @@ namespace pndf {
 
 struct Vertex {
     Vec2 uv;     // torus coordinate in [0,1)
+    Vec2 q_origin; // unwrapped chart anchor in which q is expressed
     Vec2 nxy;    // projected normal
     bool alive = true;
     bool boundary_locked = false; // debug mode only; true torus does not need this

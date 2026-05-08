@@ -88,10 +88,13 @@ static Vec2 solve_normal_for_fixed_uv(const Mat5& q, Vec2 uv, Vec2 fallback) {
     return clamp_projected_normal({nx, ny});
 }
 
-Placement best_placement(const Mat5& q, Vec2 u0, Vec2 n0, Vec2 u1, Vec2 n1, QemMode mode) {
-    const Vec2 umid = periodic_midpoint(u0, u1);
+Placement best_placement_unwrapped(const Mat5& q, Vec2 u0, Vec2 n0, Vec2 u1_unwrapped, Vec2 n1, QemMode mode) {
+    // u0 and u1_unwrapped must be in the same local torus chart.  The
+    // returned uv is deliberately not wrapped back to [0,1): doing so would
+    // make seam-crossing collapses attract to the arbitrary cut line.
+    const Vec2 umid = (u0 + u1_unwrapped) * 0.5;
     const Vec2 nmid = clamp_projected_normal((n0+n1)*0.5);
-    std::array<Vec2,3> uv_candidates{umid, u0, u1};
+    std::array<Vec2,3> uv_candidates{umid, u0, u1_unwrapped};
     std::array<Vec2,3> n_candidates{nmid, n0, n1};
     Placement best;
     best.cost = std::numeric_limits<double>::infinity();
@@ -102,6 +105,10 @@ Placement best_placement(const Mat5& q, Vec2 u0, Vec2 n0, Vec2 u1, Vec2 n1, QemM
         if (cost < best.cost) best = {uv, n, cost};
     }
     return best;
+}
+
+Placement best_placement(const Mat5& q, Vec2 u0, Vec2 n0, Vec2 u1, Vec2 n1, QemMode mode) {
+    return best_placement_unwrapped(q, u0, n0, unwrap_near(u1, u0), n1, mode);
 }
 
 } // namespace pndf

@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdint>
 #include <fstream>
+#include <functional>
 #include <iomanip>
 #include <iostream>
 #include <set>
@@ -71,6 +72,21 @@ bool link_condition_closed_manifold(const TorusMesh& mesh, int u, int v) {
     return inter.size() == 2;
 }
 
+Mat5 vertex_quadric_in_chart(const Vertex& v, Vec2 chart_origin) {
+    return rebase_uv_quadric(v.q, v.q_origin, chart_origin);
+}
+
+Mat5 edge_quadric_in_chart(const TorusMesh& mesh, int u, int v, Vec2 chart_origin) {
+    return vertex_quadric_in_chart(mesh.vertices[u], chart_origin) +
+           vertex_quadric_in_chart(mesh.vertices[v], chart_origin);
+}
+
+Placement edge_best_placement_in_chart(const TorusMesh& mesh, int u, int v, const Mat5& q, QemMode mode, Vec2 chart_origin) {
+    const Vec2 u0 = mesh.vertices[u].uv;
+    const Vec2 u1 = unwrap_near(mesh.vertices[v].uv, chart_origin);
+    return best_placement_unwrapped(q, u0, mesh.vertices[u].nxy, u1, mesh.vertices[v].nxy, mode);
+}
+
 bool candidate_non_flipping(const TorusMesh& mesh, int keep, int remove, Vec2 new_uv) {
     std::vector<int> affected = mesh.vertices[keep].faces;
     affected.insert(affected.end(), mesh.vertices[remove].faces.begin(), mesh.vertices[remove].faces.end());
@@ -124,10 +140,10 @@ QueueItem make_item(const TorusMesh& mesh, int u, int v, QemMode mode, bool lock
     if (stats) stats->link_condition_seconds += seconds_since(t_link);
     if (!link_ok) return finish({kBig,u,v,0,0});
 
-    const Mat5 q = mesh.vertices[u].q + mesh.vertices[v].q;
+    const Vec2 chart_origin = mesh.vertices[u].uv;
+    const Mat5 q = edge_quadric_in_chart(mesh, u, v, chart_origin);
     const auto t_place = Clock::now();
-    Placement p = best_placement(q, mesh.vertices[u].uv, mesh.vertices[u].nxy,
-                                 mesh.vertices[v].uv, mesh.vertices[v].nxy, mode);
+    Placement p = edge_best_placement_in_chart(mesh, u, v, q, mode, chart_origin);
     if (stats) stats->placement_seconds += seconds_since(t_place);
 
     const auto t_flip = Clock::now();
@@ -139,11 +155,19 @@ QueueItem make_item(const TorusMesh& mesh, int u, int v, QemMode mode, bool lock
 }
 
 void initialize_quadrics(TorusMesh& mesh, QemMode mode) {
-    for (auto& v : mesh.vertices) v.q = point_normal_stabilizer(v.nxy, 1.0);
+    for (auto& v : mesh.vertices) {
+        v.q_origin = v.uv;
+        v.q = point_normal_stabilizer(v.nxy, 1.0);
+    }
     for (const Face& f : mesh.faces) {
         if (!f.alive) continue;
+        const auto uv = unwrapped_face_uvs(mesh, f);
+        const Vec2 face_origin = uv[0];
         Mat5 q = (mode == QemMode::NormalOnly) ? triangle_quadric_normal_only(mesh, f) : triangle_quadric_4d(mesh, f);
-        for (int k=0;k<3;++k) mesh.vertices[f.v[k]].q += q;
+        for (int k=0;k<3;++k) {
+            Vertex& v = mesh.vertices[f.v[k]];
+            v.q += rebase_uv_quadric(q, face_origin, v.q_origin);
+        }
     }
 }
 
@@ -190,10 +214,11 @@ void compact_vertex_faces(TorusMesh& mesh, int u) {
 
 void collapse_edge(TorusMesh& mesh, int keep, int remove, QemMode mode, CollapseStats* stats = nullptr) {
     const auto t_collapse = Clock::now();
-    Mat5 q = mesh.vertices[keep].q + mesh.vertices[remove].q;
-    Placement p = best_placement(q, mesh.vertices[keep].uv, mesh.vertices[keep].nxy,
-                                 mesh.vertices[remove].uv, mesh.vertices[remove].nxy, mode);
-    mesh.vertices[keep].uv = p.uv;
+    const Vec2 chart_origin = mesh.vertices[keep].uv;
+    Mat5 q = edge_quadric_in_chart(mesh, keep, remove, chart_origin);
+    Placement p = edge_best_placement_in_chart(mesh, keep, remove, q, mode, chart_origin);
+    mesh.vertices[keep].uv = fract(p.uv);
+    mesh.vertices[keep].q_origin = p.uv;
     mesh.vertices[keep].nxy = p.nxy;
     mesh.vertices[keep].q = q;
     mesh.vertices[keep].version++;
@@ -256,17 +281,19 @@ void push_local_edges(const TorusMesh& mesh, int keep, std::priority_queue<Queue
 }
 
 void write_progress_header(std::ofstream& csv) {
-    csv << "reason,accepted,rejected,alive_vertices,alive_faces,heap_size,elapsed_seconds,"
+    csv << "reason,checkpoint_target,accepted,rejected,alive_vertices,alive_faces,heap_size,elapsed_seconds,"
         << "heap_pops,stale_pops,dead_pops,invalid_cost_pops,fresh_recomputes,fresh_requeues,fresh_rejects,"
         << "rebuild_count,max_heap_size,initialize_seconds,rebuild_seconds,make_item_seconds,"
         << "link_condition_seconds,placement_seconds,non_flip_seconds,collapse_update_seconds\n";
 }
 
 void emit_progress(const char* reason, const TorusMesh& mesh, const std::priority_queue<QueueItem>& heap,
-                   const CollapseStats& stats, Clock::time_point t0, bool verbose, std::ofstream* csv) {
+                   const CollapseStats& stats, Clock::time_point t0, bool verbose, std::ofstream* csv,
+                   int checkpoint_target = 0) {
     const double elapsed = seconds_since(t0);
     if (verbose) {
         std::cerr << "reason=" << reason
+                  << " checkpointTarget=" << checkpoint_target
                   << " accepted=" << stats.accepted
                   << " rejected=" << stats.rejected
                   << " aliveV=" << mesh.alive_vertex_count()
@@ -287,7 +314,7 @@ void emit_progress(const char* reason, const TorusMesh& mesh, const std::priorit
                   << "\n";
     }
     if (csv && csv->is_open()) {
-        (*csv) << reason << ','
+        (*csv) << reason << ',' << checkpoint_target << ','
                << stats.accepted << ',' << stats.rejected << ','
                << mesh.alive_vertex_count() << ',' << mesh.alive_face_count() << ',' << heap.size() << ','
                << elapsed << ','
@@ -322,6 +349,13 @@ CollapseStats simplify_qem(TorusMesh& mesh, const CollapseOptions& opt) {
     }
 
     int since_rebuild = 0;
+
+    std::vector<int> checkpoints = opt.checkpoint_vertices;
+    checkpoints.erase(std::remove_if(checkpoints.begin(), checkpoints.end(), [](int v) { return v <= 0; }), checkpoints.end());
+    std::sort(checkpoints.begin(), checkpoints.end(), std::greater<int>());
+    checkpoints.erase(std::unique(checkpoints.begin(), checkpoints.end()), checkpoints.end());
+    std::size_t next_checkpoint = 0;
+
     emit_progress("initial", mesh, heap, stats, t0, opt.verbose, csv.is_open() ? &csv : nullptr);
 
     while (mesh.alive_vertex_count() > opt.target_vertices && !heap.empty()) {
@@ -368,6 +402,19 @@ CollapseStats simplify_qem(TorusMesh& mesh, const CollapseOptions& opt) {
         stats.max_heap_size = std::max<std::uint64_t>(stats.max_heap_size, heap.size());
         stats.accepted++;
         since_rebuild++;
+
+        if (!checkpoints.empty()) {
+            const int alive_now = mesh.alive_vertex_count();
+            while (next_checkpoint < checkpoints.size() && alive_now <= checkpoints[next_checkpoint]) {
+                const int checkpoint_target = checkpoints[next_checkpoint];
+                if (opt.checkpoint_callback) {
+                    opt.checkpoint_callback(checkpoint_target, mesh, stats);
+                }
+                emit_progress("checkpoint", mesh, heap, stats, t0, opt.verbose,
+                              csv.is_open() ? &csv : nullptr, checkpoint_target);
+                ++next_checkpoint;
+            }
+        }
 
         if (opt.rebuild_interval > 0 && since_rebuild >= opt.rebuild_interval) {
             since_rebuild = 0;

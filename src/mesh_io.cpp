@@ -44,6 +44,7 @@ TorusMesh read_mesh_binary(const std::string& path) {
     for (int32_t i=0;i<vcount;++i) {
         float rec[4]; f.read(reinterpret_cast<char*>(rec), sizeof(rec));
         mesh.vertices[i].uv = {rec[0], rec[1]};
+        mesh.vertices[i].q_origin = mesh.vertices[i].uv;
         mesh.vertices[i].nxy = clamp_projected_normal({rec[2], rec[3]});
         mesh.vertices[i].alive = true;
     }

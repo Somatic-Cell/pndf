@@ -19,6 +19,7 @@ void TorusMesh::build_full_torus(const NormalMap& normal_map) {
         for (int x=0;x<width;++x) {
             const int id = vertex_id(x,y);
             vertices[id].uv = { (x + 0.5) / double(width), (y + 0.5) / double(height) };
+            vertices[id].q_origin = vertices[id].uv;
             vertices[id].nxy = normal_map.nxy[static_cast<size_t>(y)*width + x];
             vertices[id].alive = true;
             vertices[id].version = 0;
