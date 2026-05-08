@@ -1,0 +1,10 @@
+nxy_bin: out256_normal_rebased\isotropic_ds4_nxy.bin
+meshbin: out256_normal_rebased\isotropic_normal_ds4_v16384.meshbin
+resolution: 256 x 256
+vertices: 16384
+faces: 32768
+coverage_ratio: 1
+queries: 162
+sigma=8: mean_TV=0.266824, mean_H=0.275377, mean_peak_err=0.0247641
+sigma=16: mean_TV=0.244411, mean_H=0.231921, mean_peak_err=0.0222134
+sigma=32: mean_TV=0.240586, mean_H=0.214186, mean_peak_err=0.026843

@@ -1,0 +1,10 @@
+nxy_bin: out256_4d_rebased\scratched_ds4_nxy.bin
+meshbin: out256_4d_rebased\scratched_4d_ds4_v4096.meshbin
+resolution: 256 x 256
+vertices: 4096
+faces: 8192
+coverage_ratio: 1
+queries: 162
+sigma=8: mean_TV=0.170502, mean_H=0.218357, mean_peak_err=0.0253878
+sigma=16: mean_TV=0.124877, mean_H=0.187132, mean_peak_err=0.0286614
+sigma=32: mean_TV=0.110914, mean_H=0.175132, mean_peak_err=0.0225935

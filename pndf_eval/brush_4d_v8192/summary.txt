@@ -1,0 +1,10 @@
+nxy_bin: out256_4d_rebased\brush_ds4_nxy.bin
+meshbin: out256_4d_rebased\brush_4d_ds4_v8192.meshbin
+resolution: 256 x 256
+vertices: 8192
+faces: 16384
+coverage_ratio: 1
+queries: 162
+sigma=8: mean_TV=0.130553, mean_H=0.123727, mean_peak_err=0.0179152
+sigma=16: mean_TV=0.100281, mean_H=0.087882, mean_peak_err=0.0165219
+sigma=32: mean_TV=0.090624, mean_H=0.0731117, mean_peak_err=0.0158065

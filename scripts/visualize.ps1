@@ -1,7 +1,7 @@
 python python\visualize_pndf_mesh.py `
-  --nxy-bin out256_normal_rebased\isotropic_ds4_nxy.bin `
-  --meshbin out256_normal_rebased\isotropic_normal_ds4_v4096.meshbin `
-  --out-dir vis_diag\isotropic_normal_v4096 `
+  --nxy-bin out256_4d_rebased\brush_ds4_nxy.bin `
+  --meshbin out256_4d_rebased\brush_4d_ds4_v8192.meshbin `
+  --out-dir vis_diag\brush_4d_v8192 `
   --crop auto `
   --crop-size 0.15 `
   --crop-pixels 2048 `
