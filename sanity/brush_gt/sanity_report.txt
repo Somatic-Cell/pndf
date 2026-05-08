@@ -1,0 +1,16 @@
+Sampled footprint-NDF evaluator sanity report
+==============================================
+This validates the current sampled histogram diagnostic only.
+It does not validate the analytic continuous triangle-intersection P-NDF.
+
+nxy_bin: out256_normal_rebased\brush_ds4_nxy.bin
+meshbin: None
+resolution: 256 x 256
+queries: 162
+normal_bins: 64
+kernel: gaussian
+truncate_sigma: 3.0
+tolerance: 1e-12
+texel_centered_full_mesh_check: not_requested
+rows: 324
+failed_rows: 0

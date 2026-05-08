@@ -25,7 +25,10 @@ add_executable(pndf_run_qem apps/pndf_run_qem.cpp)
 target_link_libraries(pndf_run_qem PRIVATE pndf_core)
 
 add_executable(pndf_eval_mesh apps/pndf_eval_mesh.cpp)
-target_link_libraries(pndf_eval_mesh PRIVATE pndf_core)
+target_link_libraries(pndf_eval_mesh PRIVATE pndf_core) 
+
+add_executable(pndf_run_pnm_aniso apps/pndf_run_pnm_aniso.cpp) 
+target_link_libraries(pndf_run_pnm_aniso PRIVATE pndf_core)
 
 if (PNDF_BUILD_TESTS)
     enable_testing()
