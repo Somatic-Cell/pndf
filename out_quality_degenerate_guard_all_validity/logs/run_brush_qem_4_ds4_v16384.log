@@ -1,0 +1,12 @@
+﻿Usage:
+  Single target:
+    pndf_run_qem --input nxy.bin --output mesh.bin --target N --mode normal|4d [options]
+  Multi target checkpoint sweep:
+    pndf_run_qem --input nxy.bin --output-prefix prefix --targets N1,N2,... --mode normal|4d [options]
+Options:
+  --quiet                         Disable progress messages on stderr.
+  --rebuild-interval N            Full heap rebuild interval in accepted collapses.
+                                  Use 0 to disable periodic full rebuilds. Default: 50000.
+  --progress-interval N           Progress print/CSV interval in accepted collapses.
+                                  Use 0 to disable interval progress. Default: 50000.
+  --profile-csv path.csv          Write progress/profiling samples to CSV.

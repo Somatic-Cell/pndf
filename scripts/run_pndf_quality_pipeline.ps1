@@ -72,7 +72,14 @@ foreach ($d in @($OutDir, $nxyDir, $meshDir, $logDir, $auditDir, $metricDir, $pn
 
 if ($Build) {
     cmake --preset $Preset
+    if ($LASTEXITCODE -ne 0) {
+        throw "cmake configure failed with exit code $LASTEXITCODE"
+    }
+
     cmake --build --preset $Preset
+    if ($LASTEXITCODE -ne 0) {
+        throw "cmake build failed with exit code $LASTEXITCODE"
+    }
 }
 
 $exeQem = Join-Path $rootPath "build\$Preset\pndf_run_qem.exe"

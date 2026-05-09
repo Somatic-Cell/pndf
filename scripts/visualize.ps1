@@ -1,7 +1,7 @@
 python python\visualize_pndf_mesh.py `
   --nxy-bin out_quality_local_guard_eps1e-9\nxy\scratched_ds4_nxy.bin `
-  --meshbin C:\Users\sy415\workspace\pndf_qem_phase1\out_quality_local_guard_eps1e-9\meshes `
-  --out-dir vis_aniso\scratched_pnm_aniso_he_normal_ds4_v16384.meshbin `
+  --meshbin out_quality_local_guard_eps1e-9\meshes\scratched_pnm_he_normal_ds4_v16384.meshbin `
+  --out-dir vis_local_guard_eps1e-9\scratched_pnm_he_normal_ds4_v16384 `
   --crop 0.1,0.5,0.3 `
   --crop-size 0.15 `
   --crop-pixels 2048 `

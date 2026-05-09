@@ -33,11 +33,15 @@ struct Options {
     int relocate_passes = 1;
     double relocate_step_pixels = 1.0;
     double min_area_ratio = 0.05;
-    double flip_improvement_eps = 1e-15;
+    double flip_improvement_eps = 1e-9;
     int flip_max_accepted_per_pass = 0; // 0 = unlimited
     int rebuild_interval = 50000;
     int progress_interval = 50000;
     bool quiet = false;
+
+    // Add:
+    std::string checkpoint_dir;
+    std::string checkpoint_prefix = "pnm_he";
 };
 
 void usage() {
@@ -51,7 +55,7 @@ void usage() {
         << "  --relocate-passes N              Vertex relocation passes after each stage. Default: 1.\n"
         << "  --relocate-step-pixels X         Candidate relocation step in texels. Default: 1.0.\n"
         << "  --min-area-ratio X               Reject/limit moves that shrink incident area below X. Default: 0.05.\n"
-        << "  --flip-improvement-eps X         Required local energy decrease for flips. Default: 1e-15.\n"
+        << "  --flip-improvement-eps X         Required local energy decrease for flips. Default: 1e-9.\n"
         << "  --flip-max-accepted-per-pass N   Debug cap. 0 means unlimited.\n"
         << "  --rebuild-interval N             QEM heap rebuild interval. Default: 50000.\n"
         << "  --progress-interval N            QEM progress interval. Default: 50000.\n"
@@ -59,7 +63,9 @@ void usage() {
         << "This executable keeps the proven QEM collapse engine, but runs the\n"
         << "anisotropic alignment stage on a pmp::SurfaceMesh half-edge structure.\n"
         << "The flip stage follows a local dirty-queue update pattern, and the\n"
-        << "relocation stage uses orientation-root step limiting.\n";
+        << "relocation stage uses orientation-root step limiting.\n"
+        << "  --checkpoint-dir DIR            Write stage checkpoint meshbins into DIR.\n"
+        << "  --checkpoint-prefix NAME        Prefix for checkpoint files. Default: pnm_he.\n";
 }
 
 struct HeMesh {
@@ -155,6 +161,54 @@ TorusMesh from_halfedge_mesh(HeMesh& he) {
     return out;
 }
 
+TorusMesh snapshot_halfedge_mesh(const HeMesh& he) {
+    TorusMesh out;
+    out.width = he.width;
+    out.height = he.height;
+
+    std::vector<int> remap(he.mesh.vertices_size(), -1);
+
+    for (pmp::Vertex v : he.mesh.vertices()) {
+        if (!valid_vertex(he, v)) continue;
+
+        Vertex pv;
+        pv.uv = fract(he.uv[v]);
+        pv.q_origin = pv.uv;
+        pv.nxy = clamp_projected_normal(he.nxy[v]);
+        pv.alive = true;
+        pv.version = 0;
+
+        remap[v.idx()] = static_cast<int>(out.vertices.size());
+        out.vertices.push_back(pv);
+    }
+
+    for (pmp::Face f : he.mesh.faces()) {
+        if (!valid_face(he, f)) continue;
+
+        std::array<int, 3> tri{};
+        int k = 0;
+        for (pmp::Vertex v : he.mesh.vertices(f)) {
+            if (k < 3) tri[k++] = remap[v.idx()];
+        }
+
+        if (
+            k == 3 &&
+            tri[0] >= 0 && tri[1] >= 0 && tri[2] >= 0 &&
+            tri[0] != tri[1] &&
+            tri[1] != tri[2] &&
+            tri[2] != tri[0]
+        ) {
+            Face pf;
+            pf.v = tri;
+            pf.alive = true;
+            out.faces.push_back(pf);
+        }
+    }
+
+    out.rebuild_vertex_face_adjacency();
+    return out;
+}
+
 std::array<pmp::Vertex, 3> face_vertices3(const HeMesh& he, pmp::Face f) {
     std::array<pmp::Vertex, 3> vs{};
     int k = 0;
@@ -239,6 +293,94 @@ bool has_strict_opposite_signs(double x, double y, double eps) {
     return (x > eps && y < -eps) || (x < -eps && y > eps);
 }
 
+// Lightweight UV triangle degeneracy guard.
+// These thresholds are intentionally weak: they reject zero-area / vertex-on-edge
+// cases while still allowing the highly anisotropic, thin brush triangles.
+constexpr double kPnmUvArea2AbsEps = 1e-10;
+constexpr double kPnmUvMinSinAngle = 1e-7;
+constexpr double kPnmUvLen2Eps = 1e-24;
+
+double pnm_quality_norm2(Vec2 v) {
+    return v.x * v.x + v.y * v.y;
+}
+
+double pnm_quality_cross(Vec2 a, Vec2 b) {
+    return a.x * b.y - a.y * b.x;
+}
+
+bool pnm_triangle_quality_ok_unwrapped(
+    const std::array<Vec2, 3>& uv,
+    double expected_sign
+) {
+    const double area2 = signed_area(uv);
+    if (!std::isfinite(area2)) return false;
+
+    const double signed_area2 = expected_sign * area2;
+    if (signed_area2 <= kPnmUvArea2AbsEps) {
+        return false;
+    }
+
+    // Reject near-collinear triangles.  This is effectively a minimum sine-angle
+    // test, but with a very small threshold so that anisotropic brush triangles
+    // are still allowed.
+    for (int i = 0; i < 3; ++i) {
+        const Vec2 a = uv[(i + 1) % 3] - uv[i];
+        const Vec2 b = uv[(i + 2) % 3] - uv[i];
+
+        const double la2 = pnm_quality_norm2(a);
+        const double lb2 = pnm_quality_norm2(b);
+        if (la2 <= kPnmUvLen2Eps || lb2 <= kPnmUvLen2Eps) {
+            return false;
+        }
+
+        const double denom = std::sqrt(la2 * lb2);
+        if (denom <= 0.0 || !std::isfinite(denom)) {
+            return false;
+        }
+
+        const double sin_angle = std::abs(pnm_quality_cross(a, b)) / denom;
+        if (sin_angle <= kPnmUvMinSinAngle) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool pnm_triangle_quality_preserve_positive_orientation(
+    const std::array<Vec2, 3>& old_uv,
+    const std::array<Vec2, 3>& new_uv
+) {
+    const double old_area2 = signed_area(old_uv);
+    if (!std::isfinite(old_area2)) return false;
+
+    // Existing local chart must already be positively oriented.
+    if (old_area2 <= kPnmUvArea2AbsEps) return false;
+
+    // New candidate must also be positively oriented and non-degenerate.
+    return pnm_triangle_quality_ok_unwrapped(new_uv, +1.0);
+}
+
+bool flip_candidate_triangle_quality_ok(
+    const HeMesh& he,
+    pmp::Vertex a,
+    pmp::Vertex b,
+    pmp::Vertex c,
+    pmp::Vertex d
+) {
+    const LocalFlipPatchUv p = unwrap_flip_patch_uv(he, a, b, c, d);
+
+    // evaluate_flip() constructs the post-flip faces as {c,d,a} and {d,c,b}.
+    // Require positive UV orientation in the local unwrapped chart.
+    const std::array<Vec2, 3> t0{p.c, p.d, p.a};
+    const std::array<Vec2, 3> t1{p.d, p.c, p.b};
+
+    if (!pnm_triangle_quality_ok_unwrapped(t0, +1.0)) return false;
+    if (!pnm_triangle_quality_ok_unwrapped(t1, +1.0)) return false;
+
+    return true;
+}
+
 bool is_periodic_uv_convex_flip_patch(
     const HeMesh& he,
     pmp::Vertex a,
@@ -250,7 +392,7 @@ bool is_periodic_uv_convex_flip_patch(
 
     // Scale-independent small tolerance for UV-domain orientation tests.
     // The ordinary grid triangle has area2 around 1 / (W * H), so 1e-18 is only a degeneracy guard.
-    constexpr double eps = 1e-18;
+    constexpr double eps = kPnmUvArea2AbsEps;
 
     // Current diagonal is a-b. The two opposite vertices must lie on opposite sides.
     const double side_c_ab = orient2d(p.a, p.b, p.c);
@@ -299,7 +441,7 @@ double triangle_energy(const HeMesh& he, const NormalMap& normal_map,
     if (a == b || b == c || c == a) return std::numeric_limits<double>::infinity();
     const auto uv = unwrapped_uvs(he, a, b, c);
     const double area2 = std::abs(signed_area(uv));
-    if (area2 < 1e-20) return std::numeric_limits<double>::infinity();
+    if (area2 <= kPnmUvArea2AbsEps) return std::numeric_limits<double>::infinity();
 
     static constexpr std::array<std::array<double, 3>, 7> samples{{
         {{1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0}},
@@ -372,11 +514,14 @@ FlipCandidate evaluate_flip(const HeMesh& he, const NormalMap& normal_map, pmp::
     if (!valid_vertex(he, c) || !valid_vertex(he, d)) return out;
     if (a == b || a == c || a == d || b == c || b == d || c == d) return out;
 
-    // If the new diagonal already exists, the flip would create duplicate connectivity.
     const pmp::Edge cd = he.mesh.find_edge(c, d);
     if (he.mesh.is_valid(cd) && !he.mesh.is_deleted(cd)) return out;
 
     if (!is_periodic_uv_convex_flip_patch(he, a, b, c, d)) return out;
+
+    // New local degeneracy guard: reject flips that create zero-area,
+    // near-collinear, or wrong-orientation triangles in periodic UV.
+    if (!flip_candidate_triangle_quality_ok(he, a, b, c, d)) return out;
 
     const double before = face_energy(he, normal_map, f0) + face_energy(he, normal_map, f1);
     const std::array<pmp::Vertex, 3> t0{c, d, a};
@@ -400,6 +545,69 @@ struct FlipItem {
     }
 };
 
+bool current_face_triangle_quality_ok(const HeMesh& he, pmp::Face f) {
+    if (!valid_face(he, f)) return false;
+
+    const auto uv = unwrapped_uvs_for_face(he, f);
+
+    // Audit と同じく、最終 mesh は positive orientation を要求する。
+    return pnm_triangle_quality_ok_unwrapped(uv, +1.0);
+}
+
+bool edge_adjacent_faces_quality_ok(const HeMesh& he, pmp::Edge e) {
+    if (!valid_edge(he, e)) return false;
+    if (he.mesh.is_boundary(e)) return false;
+
+    const pmp::Face f0 = he.mesh.face(e, 0);
+    const pmp::Face f1 = he.mesh.face(e, 1);
+
+    if (!valid_face(he, f0) || !valid_face(he, f1)) return false;
+
+    if (!current_face_triangle_quality_ok(he, f0)) return false;
+    if (!current_face_triangle_quality_ok(he, f1)) return false;
+
+    return true;
+}
+
+std::vector<pmp::Face> incident_faces(const HeMesh& he, pmp::Vertex v) {
+    std::vector<pmp::Face> out;
+    if (!valid_vertex(he, v)) return out;
+    for (pmp::Face f : he.mesh.faces(v)) {
+        if (valid_face(he, f)) out.push_back(f);
+    }
+    return out;
+}
+
+bool touched_vertex_star_triangle_quality_ok(
+    const HeMesh& he,
+    const std::vector<pmp::Vertex>& touched
+) {
+    std::vector<pmp::Face> faces;
+
+    for (pmp::Vertex v : touched) {
+        if (!valid_vertex(he, v)) continue;
+
+        for (pmp::Face f : incident_faces(he, v)) {
+            if (valid_face(he, f)) {
+                faces.push_back(f);
+            }
+        }
+    }
+
+    std::sort(faces.begin(), faces.end(), [](pmp::Face a, pmp::Face b) {
+        return a.idx() < b.idx();
+    });
+    faces.erase(std::unique(faces.begin(), faces.end()), faces.end());
+
+    for (pmp::Face f : faces) {
+        if (!current_face_triangle_quality_ok(he, f)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 int flip_pass_dirty_queue(HeMesh& he, const NormalMap& normal_map,
                           double improvement_eps,
                           int max_accepted) {
@@ -421,6 +629,13 @@ int flip_pass_dirty_queue(HeMesh& he, const NormalMap& normal_map,
 
     int accepted = 0;
     while (!queue.empty()) {
+        const std::size_t queue_limit = std::max<std::size_t>(1000000ull, 128ull * std::max<std::size_t>(1, he.mesh.edges_size()));
+        if (queue.size() > queue_limit) {
+            std::cerr << "WARNING: heFlip queue explosion: queue=" << queue.size()
+                      << " edges=" << he.mesh.edges_size()
+                      << ". Stopping this flip pass.\n";
+            break;
+        }
         const FlipItem item = queue.top();
         queue.pop();
         pmp::Edge e = item.edge;
@@ -431,7 +646,33 @@ int flip_pass_dirty_queue(HeMesh& he, const NormalMap& normal_map,
         const FlipCandidate cand = evaluate_flip(he, normal_map, e, improvement_eps);
         if (!cand.ok) continue;
 
+        const pmp::Vertex c = cand.touched.size() >= 3 ? cand.touched[2] : pmp::Vertex();
+        const pmp::Vertex d = cand.touched.size() >= 4 ? cand.touched[3] : pmp::Vertex();
+
         he.mesh.flip(e);
+
+        // Validate the actual post-flip local star, not only the predicted two triangles.
+        if (!touched_vertex_star_triangle_quality_ok(he, cand.touched)) {
+            pmp::Edge undo_e = pmp::Edge();
+        
+            if (valid_vertex(he, c) && valid_vertex(he, d)) {
+                undo_e = he.mesh.find_edge(c, d);
+            }
+        
+            if (!valid_edge(he, undo_e)) {
+                undo_e = e;
+            }
+        
+            if (valid_edge(he, undo_e) && he.mesh.is_flip_ok(undo_e)) {
+                he.mesh.flip(undo_e);
+            } else {
+                std::cerr << "WARNING: could not undo invalid flip around edge="
+                          << e.idx() << "\n";
+            }
+        
+            continue;
+        }
+
         ++accepted;
 
         if (accepted > 0 && accepted % 1000 == 0) {
@@ -466,13 +707,67 @@ std::vector<pmp::Vertex> live_neighbors(const HeMesh& he, pmp::Vertex v) {
     return out;
 }
 
-std::vector<pmp::Face> incident_faces(const HeMesh& he, pmp::Vertex v) {
-    std::vector<pmp::Face> out;
-    if (!valid_vertex(he, v)) return out;
-    for (pmp::Face f : he.mesh.faces(v)) {
-        if (valid_face(he, f)) out.push_back(f);
+std::array<Vec2, 3> relocation_trial_face_uvs(
+    const HeMesh& he,
+    pmp::Face f,
+    pmp::Vertex moving,
+    Vec2 trial_uv
+) {
+    const auto vs = face_vertices3(he, f);
+
+    std::array<Vec2, 3> uv{};
+
+    // Important:
+    // Trial check must mirror the final stored mesh and audit convention.
+    // The actual accepted position is stored as fract(best_uv), and
+    // unwrapped_uvs_for_face() unwraps relative to face vertex 0.
+    const Vec2 trial_wrapped = fract(trial_uv);
+
+    const Vec2 p0 = (vs[0] == moving) ? trial_wrapped : he.uv[vs[0]];
+    uv[0] = p0;
+
+    for (int i = 1; i < 3; ++i) {
+        const Vec2 pi = (vs[i] == moving) ? trial_wrapped : he.uv[vs[i]];
+        uv[i] = unwrap_near(pi, uv[0]);
     }
-    return out;
+
+    return uv;
+}
+
+bool vertex_star_triangle_quality_ok(const HeMesh& he, pmp::Vertex v) {
+    if (!valid_vertex(he, v)) return false;
+
+    for (pmp::Face f : incident_faces(he, v)) {
+        if (!valid_face(he, f)) continue;
+
+        if (!current_face_triangle_quality_ok(he, f)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool relocation_trial_triangle_quality_ok(
+    HeMesh& he,
+    pmp::Vertex moving,
+    Vec2 trial_uv
+) {
+    if (!valid_vertex(he, moving)) return false;
+
+    const Vec2 old_uv = he.uv[moving];
+    const pmp::Point old_p = he.mesh.position(moving);
+
+    // Mirror the actual accepted update exactly.
+    he.uv[moving] = fract(trial_uv);
+    he.mesh.position(moving) = point_from_uv(he.uv[moving]);
+
+    const bool ok = vertex_star_triangle_quality_ok(he, moving);
+
+    he.uv[moving] = old_uv;
+    he.mesh.position(moving) = old_p;
+
+    return ok;
 }
 
 double vertex_local_energy(const HeMesh& he, const NormalMap& normal_map, pmp::Vertex v) {
@@ -572,8 +867,16 @@ int relocate_pass_root_limited(HeMesh& he, const NormalMap& normal_map,
             const double alpha = orientation_root_limited_alpha(he, v, delta, min_area_ratio);
             if (alpha <= 1e-8) continue;
             const Vec2 trial = base + delta * alpha;
+
+            // New local degeneracy guard.
+            // Orientation-root limiting prevents crossing the zero-orientation root,
+            // but it can still allow moves very close to zero area.  This rejects
+            // zero-area / near-collinear incident triangles.
+            if (!relocation_trial_triangle_quality_ok(he, v, trial)) continue;
+
             const Vec2 trial_n = normal_map.sample_periodic(trial);
             const double e = vertex_local_energy_trial(he, normal_map, v, trial, trial_n);
+
             if (std::isfinite(e) && e + 1e-15 < best_e) {
                 best_e = e;
                 best_uv = trial;
@@ -608,6 +911,55 @@ std::vector<int> make_stage_targets(int initial_vertices, int final_target, int 
     return stages;
 }
 
+bool checkpoint_enabled(const Options& opt) {
+    return !opt.checkpoint_dir.empty();
+}
+
+std::filesystem::path checkpoint_path(
+    const Options& opt,
+    int stage,
+    const std::string& tag
+) {
+    return std::filesystem::path(opt.checkpoint_dir) /
+        (opt.checkpoint_prefix +
+         "_stage" + std::to_string(stage) +
+         "_" + tag +
+         ".meshbin");
+}
+
+void write_torus_checkpoint(
+    const Options& opt,
+    const TorusMesh& mesh,
+    int stage,
+    const std::string& tag
+) {
+    if (!checkpoint_enabled(opt)) return;
+
+    std::filesystem::create_directories(opt.checkpoint_dir);
+
+    const auto path = checkpoint_path(opt, stage, tag);
+    write_mesh_binary(mesh, path.string());
+
+    if (!opt.quiet) {
+        std::cerr << "checkpoint stage=" << stage
+                  << " tag=" << tag
+                  << " path=" << path.string()
+                  << "\n";
+    }
+}
+
+void write_he_checkpoint(
+    const Options& opt,
+    const HeMesh& he,
+    int stage,
+    const std::string& tag
+) {
+    if (!checkpoint_enabled(opt)) return;
+
+    TorusMesh snap = snapshot_halfedge_mesh(he);
+    write_torus_checkpoint(opt, snap, stage, tag);
+}
+
 Options parse(int argc, char** argv) {
     Options opt;
     for (int i = 1; i < argc; ++i) {
@@ -637,6 +989,8 @@ Options parse(int argc, char** argv) {
         else if (a == "--rebuild-interval") opt.rebuild_interval = std::stoi(next());
         else if (a == "--progress-interval") opt.progress_interval = std::stoi(next());
         else if (a == "--quiet") opt.quiet = true;
+        else if (a == "--checkpoint-dir") opt.checkpoint_dir = next();
+        else if (a == "--checkpoint-prefix") opt.checkpoint_prefix = next();
         else { usage(); std::exit(2); }
     }
     if (opt.input.empty() || opt.output.empty() || opt.target <= 0) {
@@ -672,29 +1026,73 @@ int main(int argc, char** argv) {
                 copt.verbose = !opt.quiet;
                 copt.rebuild_interval = opt.rebuild_interval;
                 copt.progress_interval = opt.progress_interval;
+            
                 auto stats = simplify_qem(mesh, copt);
+            
                 if (!opt.quiet) {
                     std::cerr << "stage collapse target=" << stage
                               << " finalV=" << stats.final_vertices
                               << " sec=" << stats.total_seconds << "\n";
                 }
             }
-
+        
+            // Checkpoint after QEM collapse, before conversion to half-edge.
+            write_torus_checkpoint(opt, mesh, stage, "after_collapse");
+        
             if (opt.flip_passes > 0 || opt.relocate_passes > 0) {
                 HeMesh he = to_halfedge_mesh(mesh);
-
+            
+                // Optional: verify whether conversion itself already changes anything.
+                write_he_checkpoint(opt, he, stage, "after_to_halfedge");
+            
                 for (int p = 0; p < opt.flip_passes; ++p) {
-                    const int n = flip_pass_dirty_queue(he, map, opt.flip_improvement_eps,
-                                                        opt.flip_max_accepted_per_pass);
-                    if (!opt.quiet) std::cerr << "stage=" << stage << " heFlipPass=" << p << " flipped=" << n << "\n";
+                    const int n = flip_pass_dirty_queue(
+                        he,
+                        map,
+                        opt.flip_improvement_eps,
+                        opt.flip_max_accepted_per_pass
+                    );
+                
+                    if (!opt.quiet) {
+                        std::cerr << "stage=" << stage
+                                  << " heFlipPass=" << p
+                                  << " flipped=" << n << "\n";
+                    }
+                
+                    write_he_checkpoint(
+                        opt,
+                        he,
+                        stage,
+                        "after_flip_p" + std::to_string(p)
+                    );
                 }
-
+            
                 for (int p = 0; p < opt.relocate_passes; ++p) {
-                    const int n = relocate_pass_root_limited(he, map, opt.relocate_step_pixels, opt.min_area_ratio);
-                    if (!opt.quiet) std::cerr << "stage=" << stage << " heRelocatePass=" << p << " moved=" << n << "\n";
+                    const int n = relocate_pass_root_limited(
+                        he,
+                        map,
+                        opt.relocate_step_pixels,
+                        opt.min_area_ratio
+                    );
+                
+                    if (!opt.quiet) {
+                        std::cerr << "stage=" << stage
+                                  << " heRelocatePass=" << p
+                                  << " moved=" << n << "\n";
+                    }
+                
+                    write_he_checkpoint(
+                        opt,
+                        he,
+                        stage,
+                        "after_reloc_p" + std::to_string(p)
+                    );
                 }
-
+            
                 mesh = from_halfedge_mesh(he);
+            
+                // Checkpoint after HE -> TorusMesh conversion.
+                write_torus_checkpoint(opt, mesh, stage, "after_from_halfedge");
             }
         }
 

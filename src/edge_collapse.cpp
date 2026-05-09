@@ -87,34 +87,119 @@ Placement edge_best_placement_in_chart(const TorusMesh& mesh, int u, int v, cons
     return best_placement_unwrapped(q, u0, mesh.vertices[u].nxy, u1, mesh.vertices[v].nxy, mode);
 }
 
+constexpr double kCollapseUvArea2AbsEps = 1e-10;
+constexpr double kCollapseUvMinSinAngle = 1e-7;
+constexpr double kCollapseUvLen2Eps = 1e-24;
+
+double collapse_quality_norm2(Vec2 v) {
+    return v.x * v.x + v.y * v.y;
+}
+
+double collapse_quality_cross(Vec2 a, Vec2 b) {
+    return a.x * b.y - a.y * b.x;
+}
+
+bool collapse_triangle_quality_ok_unwrapped(
+    const std::array<Vec2, 3>& uv,
+    double expected_sign
+) {
+    const double area2 = oriented_area_unwrapped(uv);
+    if (!std::isfinite(area2)) return false;
+
+    const double signed_area2 = expected_sign * area2;
+    if (signed_area2 <= kCollapseUvArea2AbsEps) {
+        return false;
+    }
+
+    for (int i = 0; i < 3; ++i) {
+        const Vec2 a = uv[(i + 1) % 3] - uv[i];
+        const Vec2 b = uv[(i + 2) % 3] - uv[i];
+
+        const double la2 = collapse_quality_norm2(a);
+        const double lb2 = collapse_quality_norm2(b);
+
+        if (la2 <= kCollapseUvLen2Eps || lb2 <= kCollapseUvLen2Eps) {
+            return false;
+        }
+
+        const double denom = std::sqrt(la2 * lb2);
+        if (denom <= 0.0 || !std::isfinite(denom)) {
+            return false;
+        }
+
+        const double sin_angle = std::abs(collapse_quality_cross(a, b)) / denom;
+        if (sin_angle <= kCollapseUvMinSinAngle) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool collapse_triangle_quality_preserve_positive_orientation(
+    const std::array<Vec2, 3>& old_uv,
+    const std::array<Vec2, 3>& new_uv
+) {
+    const double old_area2 = oriented_area_unwrapped(old_uv);
+    if (!std::isfinite(old_area2)) return false;
+
+    // Collapse candidates should not propagate an already inverted local face.
+    if (old_area2 <= kCollapseUvArea2AbsEps) return false;
+
+    return collapse_triangle_quality_ok_unwrapped(new_uv, +1.0);
+}
+
+
 bool candidate_non_flipping(const TorusMesh& mesh, int keep, int remove, Vec2 new_uv) {
     std::vector<int> affected = mesh.vertices[keep].faces;
-    affected.insert(affected.end(), mesh.vertices[remove].faces.begin(), mesh.vertices[remove].faces.end());
+    affected.insert(
+        affected.end(),
+        mesh.vertices[remove].faces.begin(),
+        mesh.vertices[remove].faces.end()
+    );
+
     std::sort(affected.begin(), affected.end());
     affected.erase(std::unique(affected.begin(), affected.end()), affected.end());
+
     for (int fi : affected) {
         const Face& f = mesh.faces[fi];
         if (!f.alive) continue;
+
         const bool hk = face_has(f, keep);
         const bool hr = face_has(f, remove);
-        if (hk && hr) continue; // face disappears
+
+        // Face containing both endpoints disappears after the collapse.
+        if (hk && hr) continue;
+
+        // Unrelated face.
         if (!hk && !hr) continue;
-        std::array<Vec2,3> olduv = unwrapped_face_uvs(mesh, f);
-        const double old_area = oriented_area_unwrapped(olduv);
-        if (std::abs(old_area) < 1e-18) return false;
-        std::array<Vec2,3> newuv = olduv;
-        // unwrap new_uv near first face vertex for a conservative local test
-        for (int k=0;k<3;++k) {
+
+        const std::array<Vec2, 3> olduv = unwrapped_face_uvs(mesh, f);
+
+        // If the current face is already degenerate, do not use this collapse
+        // as a candidate.  The optimizer should not propagate existing bad
+        // local configurations.
+        const double old_area2 = oriented_area_unwrapped(olduv);
+        if (!std::isfinite(old_area2)) return false;
+        if (std::abs(old_area2) <= kCollapseUvArea2AbsEps) return false;
+
+        std::array<Vec2, 3> newuv = olduv;
+
+        // Replace keep/remove by the candidate new position in the same local
+        // periodic chart as the old face.
+        for (int k = 0; k < 3; ++k) {
             if (f.v[k] == keep || f.v[k] == remove) {
-                Vec2 base = olduv[0];
-                Vec2 d = wrap_delta(new_uv - base);
+                const Vec2 base = olduv[0];
+                const Vec2 d = wrap_delta(new_uv - base);
                 newuv[k] = base + d;
             }
         }
-        const double new_area = oriented_area_unwrapped(newuv);
-        if (std::abs(new_area) < 1e-18) return false;
-        if (old_area * new_area < -1e-18) return false;
+
+        if (!collapse_triangle_quality_preserve_positive_orientation(olduv, newuv)) {
+            return false;
+        }
     }
+
     return true;
 }
 

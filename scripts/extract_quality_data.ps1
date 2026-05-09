@@ -1,6 +1,6 @@
-$root = "out_quality_local_guard_eps1e-9"
+$root = "out_quality_degenerate_guard_actual_flip_reloc_unwrap"
 $stage = "share_text_only"
-$zip = "pndf_quality_text_only_full.zip"
+$zip = "out_quality_degenerate_guard_actual_flip_reloc_unwrap.zip"
 
 Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory $stage | Out-Null

@@ -1,0 +1,38 @@
+﻿pnm_aniso_he stages: 43238 28526 18820 12417 8192
+reason=initial checkpointTarget=0 accepted=0 rejected=0 aliveV=65536 aliveF=131072 heap=196608 sec=0.502927 rebuildSec=0.452573 makeItemSec=0.421058 linkSec=0.214039 placeSec=0.0254787 nonFlipSec=0.11948 collapseSec=0 heapPops=0 stale=0 dead=0 fresh=0 requeues=0
+reason=progress checkpointTarget=0 accepted=5000 rejected=5871 aliveV=60536 aliveF=121072 heap=219387 sec=2.51353 rebuildSec=0.452573 makeItemSec=0.559117 linkSec=0.283022 placeSec=0.032313 nonFlipSec=0.156656 collapseSec=0.0090179 heapPops=10871 stale=2909 dead=2962 fresh=5000 requeues=0
+reason=rebuild checkpointTarget=0 accepted=10000 rejected=12746 aliveV=55536 aliveF=111072 heap=162025 sec=4.98255 rebuildSec=0.846954 makeItemSec=1.0603 linkSec=0.539527 placeSec=0.0601837 nonFlipSec=0.296069 collapseSec=0.0178827 heapPops=22746 stale=6350 dead=6396 fresh=10000 requeues=0
+reason=progress checkpointTarget=0 accepted=15000 rejected=15609 aliveV=50536 aliveF=101072 heap=186229 sec=6.56448 rebuildSec=0.846954 makeItemSec=1.19139 linkSec=0.606757 placeSec=0.0664007 nonFlipSec=0.330958 collapseSec=0.0263656 heapPops=30609 stale=7761 dead=7848 fresh=15000 requeues=0
+reason=rebuild checkpointTarget=0 accepted=20000 rejected=21547 aliveV=45536 aliveF=91072 heap=130531 sec=8.8244 rebuildSec=1.1845 makeItemSec=1.63527 linkSec=0.835162 placeSec=0.0902586 nonFlipSec=0.453686 collapseSec=0.0348984 heapPops=41547 stale=10636 dead=10911 fresh=20000 requeues=0
+reason=final checkpointTarget=0 accepted=22298 rejected=22200 aliveV=43238 aliveF=86476 heap=141929 sec=9.45735 rebuildSec=1.1845 makeItemSec=1.6917 linkSec=0.864546 placeSec=0.0928612 nonFlipSec=0.468471 collapseSec=0.0385718 heapPops=44498 stale=10957 dead=11243 fresh=22298 requeues=0
+stage collapse target=43238 finalV=43238 sec=9.45735
+stage=43238 heFlipPass=0 flipped=0
+stage=43238 heRelocatePass=0 moved=28010
+reason=initial checkpointTarget=0 accepted=0 rejected=0 aliveV=43238 aliveF=86476 heap=110472 sec=0.346552 rebuildSec=0.312007 makeItemSec=0.290987 linkSec=0.151827 placeSec=0.0167778 nonFlipSec=0.0798399 collapseSec=0 heapPops=0 stale=0 dead=0 fresh=0 requeues=0
+reason=progress checkpointTarget=0 accepted=5000 rejected=152 aliveV=38238 aliveF=76476 heap=134495 sec=1.16539 rebuildSec=0.312007 makeItemSec=0.401815 linkSec=0.21033 placeSec=0.0221017 nonFlipSec=0.107997 collapseSec=0.0071325 heapPops=5152 stale=70 dead=82 fresh=5000 requeues=0
+reason=rebuild checkpointTarget=0 accepted=10000 rejected=2098 aliveV=33238 aliveF=66476 heap=90581 sec=2.34161 rebuildSec=0.566482 makeItemSec=0.771077 linkSec=0.401693 placeSec=0.0413087 nonFlipSec=0.210188 collapseSec=0.0155595 heapPops=12098 stale=914 dead=1184 fresh=10000 requeues=0
+reason=final checkpointTarget=0 accepted=14712 rejected=4385 aliveV=28526 aliveF=57052 heap=112135 sec=3.29826 rebuildSec=0.566482 makeItemSec=0.885314 linkSec=0.462447 placeSec=0.0464424 nonFlipSec=0.24013 collapseSec=0.0229799 heapPops=19097 stale=1979 dead=2406 fresh=14712 requeues=0
+stage collapse target=28526 finalV=28526 sec=3.29826
+stage=28526 heFlipPass=0 flipped=28
+stage=28526 heRelocatePass=0 moved=13020
+reason=initial checkpointTarget=0 accepted=0 rejected=0 aliveV=28526 aliveF=57052 heap=76912 sec=0.234643 rebuildSec=0.212814 makeItemSec=0.198255 linkSec=0.102859 placeSec=0.0111366 nonFlipSec=0.0557769 collapseSec=0 heapPops=0 stale=0 dead=0 fresh=0 requeues=0
+reason=progress checkpointTarget=0 accepted=5000 rejected=1784 aliveV=23526 aliveF=47052 heap=100980 sec=0.939541 rebuildSec=0.212814 makeItemSec=0.324098 linkSec=0.169438 placeSec=0.0171489 nonFlipSec=0.0891181 collapseSec=0.0078733 heapPops=6784 stale=784 dead=999 fresh=5001 requeues=0
+reason=final checkpointTarget=0 accepted=9706 rejected=9156 aliveV=18820 aliveF=37640 heap=118214 sec=1.93585 rebuildSec=0.212814 makeItemSec=0.43751 linkSec=0.230322 placeSec=0.0223211 nonFlipSec=0.118837 collapseSec=0.0151464 heapPops=18862 stale=3773 dead=5380 fresh=9709 requeues=0
+stage collapse target=18820 finalV=18820 sec=1.93585
+stage=18820 heFlipPass=0 flipped=84
+stage=18820 heRelocatePass=0 moved=9354
+reason=initial checkpointTarget=0 accepted=0 rejected=0 aliveV=18820 aliveF=37640 heap=51508 sec=0.157916 rebuildSec=0.143623 makeItemSec=0.133977 linkSec=0.0693975 placeSec=0.0074037 nonFlipSec=0.0379439 collapseSec=0 heapPops=0 stale=0 dead=0 fresh=0 requeues=0
+reason=progress checkpointTarget=0 accepted=5000 rejected=3130 aliveV=13820 aliveF=27640 heap=74703 sec=0.660512 rebuildSec=0.143623 makeItemSec=0.255569 linkSec=0.13286 placeSec=0.0133196 nonFlipSec=0.0713313 collapseSec=0.0077809 heapPops=8130 stale=1373 dead=1753 fresh=5004 requeues=0
+reason=final checkpointTarget=0 accepted=6403 rejected=5971 aliveV=12417 aliveF=24834 heap=79170 sec=0.879483 rebuildSec=0.143623 makeItemSec=0.287583 linkSec=0.149921 placeSec=0.0148051 nonFlipSec=0.0799127 collapseSec=0.0098451 heapPops=12374 stale=2472 dead=3494 fresh=6408 requeues=0
+stage collapse target=12417 finalV=12417 sec=0.879483
+stage=12417 heFlipPass=0 flipped=556
+stage=12417 heRelocatePass=0 moved=6940
+reason=initial checkpointTarget=0 accepted=0 rejected=0 aliveV=12417 aliveF=24834 heap=34004 sec=0.130101 rebuildSec=0.120483 makeItemSec=0.113504 linkSec=0.058996 placeSec=0.0060921 nonFlipSec=0.0325088 collapseSec=0 heapPops=0 stale=0 dead=0 fresh=0 requeues=0
+reason=final checkpointTarget=0 accepted=4225 rejected=4419 aliveV=8192 aliveF=16384 heap=51738 sec=0.312469 rebuildSec=0.120483 makeItemSec=0.20659 linkSec=0.105712 placeSec=0.0105787 nonFlipSec=0.0594812 collapseSec=0.0056531 heapPops=8644 stale=1778 dead=2632 fresh=4234 requeues=0
+stage collapse target=8192 finalV=8192 sec=0.312468
+heFlip accepted=1000 queue=95 edges=24576
+stage=8192 heFlipPass=0 flipped=1052
+stage=8192 heRelocatePass=0 moved=4896
+final_vertices,8192
+final_faces,16384
+output,C:\Users\sy415\workspace\pndf_qem_phase1\out_quality_degenerate_guard_eps_stronger_quick\meshes\brush_pnm_he_normal_ds4_v8192.meshbin

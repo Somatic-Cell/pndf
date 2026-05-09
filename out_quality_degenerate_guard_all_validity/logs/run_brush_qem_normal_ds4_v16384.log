@@ -1,0 +1,23 @@
+﻿reason=initial checkpointTarget=0 accepted=0 rejected=0 aliveV=65536 aliveF=131072 heap=196608 sec=0.54021 rebuildSec=0.487422 makeItemSec=0.455126 linkSec=0.232056 placeSec=0.0275811 nonFlipSec=0.128858 collapseSec=0 heapPops=0 stale=0 dead=0 fresh=0 requeues=0
+reason=final checkpointTarget=0 accepted=49152 rejected=121077 aliveV=16384 aliveF=32768 heap=336106 sec=29.6002 rebuildSec=0.487422 makeItemSec=1.79396 linkSec=0.930163 placeSec=0.0874968 nonFlipSec=0.471417 collapseSec=0.0941136 heapPops=170229 stale=48655 dead=72420 fresh=49154 requeues=0
+accepted,49152
+rejected,121077
+final_vertices,16384
+final_faces,32768
+seconds,29.6002
+heap_pops,170229
+stale_pops,48655
+dead_pops,72420
+invalid_cost_pops,0
+fresh_recomputes,49154
+fresh_requeues,0
+fresh_rejects,2
+rebuild_count,1
+max_heap_size,341125
+initialize_seconds,0.0525893
+rebuild_seconds,0.487422
+make_item_seconds,1.79396
+link_condition_seconds,0.930163
+placement_seconds,0.0874968
+non_flip_seconds,0.471417
+collapse_update_seconds,0.0941136
