@@ -1,0 +1,10 @@
+nxy_bin: out_quality_local_guard_eps1e-9\nxy\brush_ds4_nxy.bin
+meshbin: out_quality_local_guard_eps1e-9\meshes\brush_pnm_he_4d_ds4_v8192.meshbin
+resolution: 256 x 256
+vertices: 8192
+faces: 16384
+coverage_ratio: 1
+queries: 162
+sigma=8: mean_TV=0.0885637, mean_H=0.0892565, mean_peak_err=0.014269
+sigma=16: mean_TV=0.0583673, mean_H=0.0557345, mean_peak_err=0.00929658
+sigma=32: mean_TV=0.0470492, mean_H=0.0407411, mean_peak_err=0.00973867

@@ -1,0 +1,10 @@
+nxy_bin: C:\Users\sy415\workspace\pndf_qem_phase1\out_quality_local_guard_eps1e-9\nxy\scratched_ds4_nxy.bin
+meshbin: C:\Users\sy415\workspace\pndf_qem_phase1\out_quality_local_guard_eps1e-9\meshes\scratched_qem_4d_ds4_v4096.meshbin
+resolution: 256 x 256
+vertices: 4096
+faces: 8192
+coverage_ratio: 1
+queries: 162
+sigma=8: mean_TV=0.166321, mean_H=0.215231, mean_peak_err=0.0240899
+sigma=16: mean_TV=0.125223, mean_H=0.186443, mean_peak_err=0.0299181
+sigma=32: mean_TV=0.112016, mean_H=0.174536, mean_peak_err=0.0265452

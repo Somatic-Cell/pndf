@@ -1,0 +1,10 @@
+nxy_bin: out_quality_local_guard_eps1e-9\nxy\isotropic_ds4_nxy.bin
+meshbin: out_quality_local_guard_eps1e-9\meshes\isotropic_pnm_he_4d_ds4_v4096.meshbin
+resolution: 256 x 256
+vertices: 4096
+faces: 8192
+coverage_ratio: 1
+queries: 162
+sigma=8: mean_TV=0.494613, mean_H=0.468108, mean_peak_err=0.0265002
+sigma=16: mean_TV=0.466667, mean_H=0.430153, mean_peak_err=0.0182206
+sigma=32: mean_TV=0.453079, mean_H=0.415358, mean_peak_err=0.0179809

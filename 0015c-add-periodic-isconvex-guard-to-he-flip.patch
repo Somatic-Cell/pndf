@@ -1,0 +1,106 @@
+From 0015c Mon Sep 17 00:00:00 2001
+From: ChatGPT <chatgpt@openai.com>
+Date: Sat, 9 May 2026 00:00:00 +0000
+Subject: [PATCH] Add periodic UV convexity guard to HE flip
+
+Add a local CVPR2025-style isConvex guard before accepting half-edge
+flips in pndf_run_pnm_aniso_he. The guard unwraps the four vertices of
+the two-triangle patch into a local periodic UV chart, rejects degenerate
+or non-convex patches, and only then lets the PNM energy comparison
+accept the flip.
+---
+ apps/pndf_run_pnm_aniso_he.cpp | 73 +++++++++++++++++++++++++++++++
+ 1 file changed, 73 insertions(+)
+
+diff --git a/apps/pndf_run_pnm_aniso_he.cpp b/apps/pndf_run_pnm_aniso_he.cpp
+--- a/apps/pndf_run_pnm_aniso_he.cpp
++++ b/apps/pndf_run_pnm_aniso_he.cpp
+@@ -329,6 +329,77 @@ double signed_area(const std::array<Vec2, 3>& uv) {
+  return e0.x * e1.y - e0.y * e1.x;
+ }
+ 
++double orient2d(Vec2 a, Vec2 b, Vec2 c) {
++ const Vec2 ab = b - a;
++ const Vec2 ac = c - a;
++ return ab.x * ac.y - ab.y * ac.x;
++}
++
++bool finite_uv(Vec2 p) {
++ return std::isfinite(p.x) && std::isfinite(p.y);
++}
++
++struct LocalFlipPatchUv {
++ Vec2 a;
++ Vec2 b;
++ Vec2 c;
++ Vec2 d;
++};
++
++LocalFlipPatchUv unwrap_flip_patch_uv(const HeMesh& he,
++                                      pmp::Vertex a,
++                                      pmp::Vertex b,
++                                      pmp::Vertex c,
++                                      pmp::Vertex d) {
++ LocalFlipPatchUv p;
++ p.a = he.uv[a];
++ p.b = unwrap_near(he.uv[b], p.a);
++
++ // Choose the opposite vertices in the compact periodic copy near the
++ // current diagonal. This makes seam-crossing quads testable in one local
++ // Euclidean chart instead of in wrapped [0,1)^2 coordinates.
++ Vec2 center = (p.a + p.b) * 0.5;
++ p.c = unwrap_near(he.uv[c], center);
++ p.d = unwrap_near(he.uv[d], center);
++
++ // Recenter once using the full patch. This keeps the four chosen copies
++ // close to one another when the current edge itself crosses the seam.
++ center = (p.a + p.b + p.c + p.d) * 0.25;
++ p.a = unwrap_near(p.a, center);
++ p.b = unwrap_near(p.b, center);
++ p.c = unwrap_near(p.c, center);
++ p.d = unwrap_near(p.d, center);
++ return p;
++}
++
++bool is_periodic_uv_convex_flip_patch(const HeMesh& he,
++                                      pmp::Vertex a,
++                                      pmp::Vertex b,
++                                      pmp::Vertex c,
++                                      pmp::Vertex d) {
++ const LocalFlipPatchUv p = unwrap_flip_patch_uv(he, a, b, c, d);
++ if (!finite_uv(p.a) || !finite_uv(p.b) || !finite_uv(p.c) || !finite_uv(p.d)) return false;
++
++ constexpr double eps = 1e-20;
++
++ // The current edge ab should be a proper diagonal of the local patch:
++ // the two opposite vertices must lie on different sides of it.
++ const double old_c = orient2d(p.a, p.b, p.c);
++ const double old_d = orient2d(p.a, p.b, p.d);
++ if (std::abs(old_c) <= eps || std::abs(old_d) <= eps) return false;
++ if (old_c * old_d >= 0.0) return false;
++
++ // The proposed new edge cd must also be a proper diagonal. We use the
++ // post-flip triangle orientations {c,d,a} and {d,c,b}; requiring both to
++ // have the same sign rejects bow-tie and locally inverted patches.
++ const double new_a = orient2d(p.c, p.d, p.a);
++ const double new_b = orient2d(p.d, p.c, p.b);
++ if (std::abs(new_a) <= eps || std::abs(new_b) <= eps) return false;
++ if (new_a * new_b <= 0.0) return false;
++
++ return true;
++}
++
+ Vec2 lerp_nxy(const HeMesh& he, pmp::Vertex a, pmp::Vertex b, pmp::Vertex c,
+  double l0, double l1, double l2) {
+  return clamp_projected_normal(he.nxy[a] * l0 + he.nxy[b] * l1 + he.nxy[c] * l2);
+@@ -491,6 +562,8 @@ FlipCandidate evaluate_flip(const HeMesh& he, const NormalMap& normal_map, pmp::
+  const pmp::Edge cd = he.mesh.find_edge(c, d);
+  if (he.mesh.is_valid(cd) && !he.mesh.is_deleted(cd)) return out;
+ 
++ if (!is_periodic_uv_convex_flip_patch(he, a, b, c, d)) return out;
++
+  const double before = face_energy(he, normal_map, f0) + face_energy(he, normal_map, f1);
+ 
+  const std::array<pmp::Vertex, 3> t0{c, d, a};
+-- 
+2.44.0

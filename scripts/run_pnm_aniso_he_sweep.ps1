@@ -13,7 +13,9 @@ param(
     [double]$MinAreaRatio = 0.05,
     [int]$RebuildInterval = 10000,
     [int]$ProgressInterval = 5000,
-    [switch]$Build
+    [switch]$Build,
+    [double]$FlipImprovementEps = 1e-10,
+    [int]$FlipMaxAcceptedPerPass = 0
 )
 
 $ErrorActionPreference = "Stop"
@@ -54,7 +56,9 @@ foreach ($ds in $Downsamples) {
                     --relocate-step-pixels $RelocateStepPixels `
                     --min-area-ratio $MinAreaRatio `
                     --rebuild-interval $RebuildInterval `
-                    --progress-interval $ProgressInterval
+                    --progress-interval $ProgressInterval `
+                    --flip-improvement-eps $FlipImprovementEps `
+                    --flip-max-accepted-per-pass $FlipMaxAcceptedPerPass
             }
         }
     }

@@ -200,6 +200,86 @@ double signed_area(const std::array<Vec2, 3>& uv) {
     return e0.x * e1.y - e0.y * e1.x;
 }
 
+double orient2d(Vec2 a, Vec2 b, Vec2 c) {
+    const Vec2 e0 = b - a;
+    const Vec2 e1 = c - a;
+    return e0.x * e1.y - e0.y * e1.x;
+}
+
+struct LocalFlipPatchUv {
+    Vec2 a;
+    Vec2 b;
+    Vec2 c;
+    Vec2 d;
+};
+
+LocalFlipPatchUv unwrap_flip_patch_uv(
+    const HeMesh& he,
+    pmp::Vertex a,
+    pmp::Vertex b,
+    pmp::Vertex c,
+    pmp::Vertex d
+) {
+    LocalFlipPatchUv p;
+
+    p.a = he.uv[a];
+
+    // Put the current diagonal endpoint b in the same local periodic chart as a.
+    p.b = unwrap_near(he.uv[b], p.a);
+
+    // Opposite vertices should be near the current edge, not necessarily near a only.
+    const Vec2 edge_mid = (p.a + p.b) * 0.5;
+    p.c = unwrap_near(he.uv[c], edge_mid);
+    p.d = unwrap_near(he.uv[d], edge_mid);
+
+    return p;
+}
+
+bool has_strict_opposite_signs(double x, double y, double eps) {
+    return (x > eps && y < -eps) || (x < -eps && y > eps);
+}
+
+bool is_periodic_uv_convex_flip_patch(
+    const HeMesh& he,
+    pmp::Vertex a,
+    pmp::Vertex b,
+    pmp::Vertex c,
+    pmp::Vertex d
+) {
+    const LocalFlipPatchUv p = unwrap_flip_patch_uv(he, a, b, c, d);
+
+    // Scale-independent small tolerance for UV-domain orientation tests.
+    // The ordinary grid triangle has area2 around 1 / (W * H), so 1e-18 is only a degeneracy guard.
+    constexpr double eps = 1e-18;
+
+    // Current diagonal is a-b. The two opposite vertices must lie on opposite sides.
+    const double side_c_ab = orient2d(p.a, p.b, p.c);
+    const double side_d_ab = orient2d(p.a, p.b, p.d);
+    if (!has_strict_opposite_signs(side_c_ab, side_d_ab, eps)) {
+        return false;
+    }
+
+    // New diagonal is c-d. The old diagonal endpoints must lie on opposite sides.
+    const double side_a_cd = orient2d(p.c, p.d, p.a);
+    const double side_b_cd = orient2d(p.c, p.d, p.b);
+    if (!has_strict_opposite_signs(side_a_cd, side_b_cd, eps)) {
+        return false;
+    }
+
+    // The two flipped triangles used by evaluate_flip() are {c,d,a} and {d,c,b}.
+    // They should be non-degenerate and have the same orientation in the local chart.
+    const double area0 = orient2d(p.c, p.d, p.a);
+    const double area1 = orient2d(p.d, p.c, p.b);
+    if (std::abs(area0) <= eps || std::abs(area1) <= eps) {
+        return false;
+    }
+    if (area0 * area1 <= 0.0) {
+        return false;
+    }
+
+    return true;
+}
+
 Vec2 lerp_nxy(const HeMesh& he, pmp::Vertex a, pmp::Vertex b, pmp::Vertex c,
               double l0, double l1, double l2) {
     return clamp_projected_normal(he.nxy[a] * l0 + he.nxy[b] * l1 + he.nxy[c] * l2);
@@ -296,6 +376,8 @@ FlipCandidate evaluate_flip(const HeMesh& he, const NormalMap& normal_map, pmp::
     const pmp::Edge cd = he.mesh.find_edge(c, d);
     if (he.mesh.is_valid(cd) && !he.mesh.is_deleted(cd)) return out;
 
+    if (!is_periodic_uv_convex_flip_patch(he, a, b, c, d)) return out;
+
     const double before = face_energy(he, normal_map, f0) + face_energy(he, normal_map, f1);
     const std::array<pmp::Vertex, 3> t0{c, d, a};
     const std::array<pmp::Vertex, 3> t1{d, c, b};
@@ -351,6 +433,13 @@ int flip_pass_dirty_queue(HeMesh& he, const NormalMap& normal_map,
 
         he.mesh.flip(e);
         ++accepted;
+
+        if (accepted > 0 && accepted % 1000 == 0) {
+        std::cerr << "heFlip accepted=" << accepted
+              << " queue=" << queue.size()
+              << " edges=" << he.mesh.edges_size()
+              << "\n";
+        }
 
         const auto dirty = local_edges_around_vertices(he, cand.touched);
         for (pmp::Edge de : dirty) {

@@ -1,0 +1,10 @@
+nxy_bin: C:\Users\sy415\workspace\pndf_qem_phase1\out_quality_local_guard_eps1e-9\nxy\brush_ds4_nxy.bin
+meshbin: C:\Users\sy415\workspace\pndf_qem_phase1\out_quality_local_guard_eps1e-9\meshes\brush_pnm_he_normal_ds4_v8192.meshbin
+resolution: 256 x 256
+vertices: 8192
+faces: 16384
+coverage_ratio: 1
+queries: 162
+sigma=8: mean_TV=0.0687437, mean_H=0.0720978, mean_peak_err=0.0124336
+sigma=16: mean_TV=0.040621, mean_H=0.0420913, mean_peak_err=0.0115121
+sigma=32: mean_TV=0.0273467, mean_H=0.0270004, mean_peak_err=0.0120535

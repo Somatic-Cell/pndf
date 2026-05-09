@@ -1,0 +1,24 @@
+﻿reason=initial checkpointTarget=0 accepted=0 rejected=0 aliveV=65536 aliveF=131072 heap=196608 sec=0.456836 rebuildSec=0.398318 makeItemSec=0.365572 linkSec=0.212228 placeSec=0.0253641 nonFlipSec=0.0663929 collapseSec=0 heapPops=0 stale=0 dead=0 fresh=0 requeues=0
+reason=rebuild checkpointTarget=0 accepted=50000 rejected=128395 aliveV=15536 aliveF=31072 heap=43393 sec=31.772 rebuildSec=0.525822 makeItemSec=1.78656 linkSec=1.03179 placeSec=0.0935869 nonFlipSec=0.333538 collapseSec=0.102626 heapPops=178395 stale=50169 dead=78224 fresh=50002 requeues=0
+reason=final checkpointTarget=0 accepted=57344 rejected=145047 aliveV=8192 aliveF=16384 heap=64885 sec=36.2129 rebuildSec=0.525822 makeItemSec=1.99534 linkSec=1.154 placeSec=0.10281 nonFlipSec=0.373111 collapseSec=0.118217 heapPops=202391 stale=57006 dead=88027 fresh=57358 requeues=0
+accepted,57344
+rejected,145047
+final_vertices,8192
+final_faces,16384
+seconds,36.2129
+heap_pops,202391
+stale_pops,57006
+dead_pops,88027
+invalid_cost_pops,0
+fresh_recomputes,57358
+fresh_requeues,0
+fresh_rejects,14
+rebuild_count,2
+max_heap_size,341125
+initialize_seconds,0.0583108
+rebuild_seconds,0.525822
+make_item_seconds,1.99534
+link_condition_seconds,1.154
+placement_seconds,0.10281
+non_flip_seconds,0.373111
+collapse_update_seconds,0.118217
