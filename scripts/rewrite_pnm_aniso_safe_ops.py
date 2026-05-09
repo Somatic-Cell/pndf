@@ -1,4 +1,16 @@
-#include "pndf/edge_collapse.hpp"
+#!/usr/bin/env python3
+"""Rewrite apps/pndf_run_pnm_aniso.cpp with safer flip/relocation code.
+
+The current repository keeps pndf_run_pnm_aniso.cpp largely on one very long
+line, so a normal textual patch is brittle. This script intentionally rewrites
+that translation unit in a formatted form.
+"""
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+DST = ROOT / "apps" / "pndf_run_pnm_aniso.cpp"
+
+CPP = r'''#include "pndf/edge_collapse.hpp"
 #include "pndf/math.hpp"
 #include "pndf/mesh_io.hpp"
 #include "pndf/normal_map.hpp"
@@ -596,3 +608,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 }
+'''
+
+DST.write_text(CPP, encoding="utf-8", newline="\n")
+print(f"rewrote {DST}")

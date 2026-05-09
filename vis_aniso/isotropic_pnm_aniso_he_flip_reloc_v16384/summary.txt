@@ -1,0 +1,46 @@
+nxy_bin: out_pnm_aniso\isotropic_ds4_nxy.bin
+meshbin: out_debug\isotropic_pnm_aniso_he_flip_reloc_v16384.meshbin
+mesh_format: width,height,V,F
+nxy_resolution: 256 x 256
+mesh_declared_resolution: 256 x 256
+vertices: 16384
+faces: 32768
+crop: u0=0.10000000, v0=0.50000000, size=0.30000000, pixels=2048
+full_overlay_max_edges: 0
+crop_overlay_edges_drawn: 2574
+seam_diag_original_cut:
+seam_diag_original_cut.shift_u: 0
+seam_diag_original_cut.shift_v: 0
+seam_diag_original_cut.band_pixels: 4
+seam_diag_original_cut.band_width_u: 0.015625
+seam_diag_original_cut.band_width_v: 0.015625
+seam_diag_original_cut.vertex_count: 16384
+seam_diag_original_cut.vertex_band_count: 979
+seam_diag_original_cut.vertex_band_ratio: 0.059753418
+seam_diag_original_cut.expected_band_area_ratio: 0.061523438
+seam_diag_original_cut.vertex_band_over_expected: 0.97123016
+seam_diag_original_cut.edge_count: 49152
+seam_diag_original_cut.edge_band_count: 3435
+seam_diag_original_cut.edge_band_ratio: 0.069885254
+seam_diag_original_cut.seam_crossing_edge_count: 508
+seam_diag_original_cut.seam_crossing_edge_ratio: 0.010335286
+seam_diag_shifted_cut:
+seam_diag_shifted_cut.shift_u: 0.5
+seam_diag_shifted_cut.shift_v: 0.5
+seam_diag_shifted_cut.band_pixels: 4
+seam_diag_shifted_cut.band_width_u: 0.015625
+seam_diag_shifted_cut.band_width_v: 0.015625
+seam_diag_shifted_cut.vertex_count: 16384
+seam_diag_shifted_cut.vertex_band_count: 1174
+seam_diag_shifted_cut.vertex_band_ratio: 0.071655273
+seam_diag_shifted_cut.expected_band_area_ratio: 0.061523438
+seam_diag_shifted_cut.vertex_band_over_expected: 1.1646825
+seam_diag_shifted_cut.edge_count: 49152
+seam_diag_shifted_cut.edge_band_count: 4131
+seam_diag_shifted_cut.edge_band_ratio: 0.08404541
+seam_diag_shifted_cut.seam_crossing_edge_count: 634
+seam_diag_shifted_cut.seam_crossing_edge_ratio: 0.012898763
+mean_deg: 2.251746416091919
+p95_deg: 5.711952209472656
+p99_deg: 8.643343925476074
+max_deg: 17.414897918701172
